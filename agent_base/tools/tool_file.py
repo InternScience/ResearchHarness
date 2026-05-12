@@ -216,7 +216,7 @@ class ReadPDF(ToolBase):
         try:
             from structai import read_pdf as structai_read_pdf
         except ImportError:
-            return "[ReadPDF] Missing optional dependency: structai. Install requirements and configure MINERU_TOKEN to enable PDF reading."
+            return "[ReadPDF] Missing required dependency: structai. Install requirements and configure MINERU_TOKEN to enable PDF reading."
 
         try:
             result = structai_read_pdf(str(path))

@@ -160,6 +160,26 @@ Copy `.env.example` to `.env` and fill in all required variables.
 
 ResearchHarness currently talks to OpenAI-compatible chat-completions APIs. In practice, that means GPT, Gemini, Qwen, GLM, and other model families can be used when they are exposed through a compatible endpoint.
 
+> [!IMPORTANT]
+> **🚨 Required setup before running ResearchHarness**
+>
+> Fill in all required environment variables before starting the agent:
+> `API_KEY`, `API_BASE`, `MODEL_NAME`, `SERPER_KEY_ID`, `JINA_API_KEYS`, and `MINERU_TOKEN`.
+>
+> Service key sources:
+> - LLM provider key and endpoint: your OpenAI-compatible provider.
+> - Serper API key for `WebSearch` and `ScholarSearch`: https://serper.dev/
+> - Jina API key for `WebFetch`: https://jina.ai/
+> - MinerU token for `ReadPDF`: https://mineru.net/
+>
+> Before using ResearchHarness for real tasks, run the full tool availability check and require every tool to pass:
+>
+> ```bash
+> python3 tests/test_tool_availability.py
+> ```
+>
+> The expected result is all tools passing. Missing credentials, missing dependencies, exhausted service credits, or unavailable external tools should be treated as failures, not skipped checks.
+
 Required variables:
 
 - `API_KEY`

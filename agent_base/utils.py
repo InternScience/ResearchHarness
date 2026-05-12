@@ -9,6 +9,18 @@ from typing import Any, Optional, Union
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_LAST_LOADED: dict[tuple[str, str], str] = {}
+REQUIRED_ENV_VARS = (
+    "API_KEY",
+    "API_BASE",
+    "MODEL_NAME",
+    "SERPER_KEY_ID",
+    "JINA_API_KEYS",
+    "MINERU_TOKEN",
+)
+
+
+class MissingRequiredEnvError(RuntimeError):
+    pass
 
 
 def load_dotenv(path: Union[str, Path]) -> None:
@@ -46,6 +58,20 @@ def load_dotenv(path: Union[str, Path]) -> None:
 
 def env_flag(name: str) -> bool:
     return os.getenv(name, "").lower() in {"1", "true", "yes", "on"}
+
+
+def missing_required_env(required: tuple[str, ...] = REQUIRED_ENV_VARS) -> list[str]:
+    return [key for key in required if not os.getenv(key, "").strip()]
+
+
+def require_required_env(context: str = "ResearchHarness") -> None:
+    missing = missing_required_env()
+    if not missing:
+        return
+    raise MissingRequiredEnvError(
+        f"{context} missing required environment variables: {', '.join(missing)}. "
+        "Set them in .env or the process environment before running."
+    )
 
 
 def safe_jsonable(value: Any) -> Any:

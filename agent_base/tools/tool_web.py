@@ -34,6 +34,16 @@ def visit_debug_enabled() -> bool:
     return env_flag("DEBUG_VISIT")
 
 
+def _request_error_text(exc: requests.RequestException) -> str:
+    response = getattr(exc, "response", None)
+    if response is None:
+        return str(exc)
+    body = response.text.strip()
+    if len(body) > 1000:
+        body = body[:1000] + "...(truncated)"
+    return f"{exc}; response_body={body}" if body else str(exc)
+
+
 def truncate_to_tokens(text: str, max_tokens: int = 95000) -> str:
     encoding = tiktoken.get_encoding("cl100k_base")
     tokens = encoding.encode(text)
@@ -140,7 +150,7 @@ class WebSearch(ToolBase):
                 res.raise_for_status()
                 break
             except requests.RequestException as exc:
-                last_error = str(exc)
+                last_error = _request_error_text(exc)
                 if search_debug_enabled():
                     print(exc)
                 if i == 4:
@@ -238,7 +248,7 @@ class ScholarSearch(ToolBase):
                 res.raise_for_status()
                 break
             except requests.RequestException as exc:
-                last_error = str(exc)
+                last_error = _request_error_text(exc)
                 if scholar_debug_enabled():
                     print(exc)
                 if i == 4:

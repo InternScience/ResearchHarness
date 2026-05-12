@@ -19,6 +19,7 @@ from test_support import (
     final_result_text,
     load_trace_records,
     preview,
+    require_test_env,
     single_trace_path,
     subprocess_python,
     training_trace_ok,
@@ -84,6 +85,7 @@ def collect_trace_issues(rows: list[dict]) -> tuple[list[str], bool]:
 
 def main() -> int:
     load_dotenv(ROOT / ".env")
+    require_test_env()
     prompt = QUESTION_FILE.read_text(encoding="utf-8").strip()
     TRACE_DIR.mkdir(parents=True, exist_ok=True)
     for existing_trace in TRACE_DIR.glob("*.jsonl"):

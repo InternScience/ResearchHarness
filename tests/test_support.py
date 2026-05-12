@@ -16,7 +16,7 @@ ROOT = _resolve_root()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent_base.utils import load_dotenv
+from agent_base.utils import MissingRequiredEnvError, load_dotenv, require_required_env
 
 
 WORKSPACE_ROOT = ROOT / "workspace"
@@ -51,10 +51,18 @@ TRACE_REQUIRED_KEYS = {
 
 def bootstrap() -> None:
     load_dotenv(ROOT / ".env")
+    require_test_env()
     os.environ["WORKSPACE_ROOT"] = str(ROOT)
     WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
+
+
+def require_test_env() -> None:
+    try:
+        require_required_env("ResearchHarness tests")
+    except MissingRequiredEnvError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def subprocess_python() -> list[str]:

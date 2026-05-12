@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import json
-import os
 import io
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -102,17 +101,24 @@ def main() -> int:
     tools_called.append("Grep")
     outputs.append(grep_output)
 
-    read_pdf_output = None
-    if pdf_path.exists() and os.getenv("MINERU_TOKEN") and has_structai():
-        read_pdf_tool = ReadPDF()
-        read_pdf_output = read_pdf_tool.call(
-            {
-                "path": str(pdf_path),
-                "max_chars": 1500,
-            }
+    if not has_structai():
+        result = LocalToolsResult(
+            status="FAIL",
+            detail="Missing required dependency: structai.",
+            tools_called=tools_called,
+            output_preview=preview("\n\n".join(outputs)),
         )
-        tools_called.append("ReadPDF")
-        outputs.append(read_pdf_output)
+        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+        return 1
+    read_pdf_tool = ReadPDF()
+    read_pdf_output = read_pdf_tool.call(
+        {
+            "path": str(pdf_path),
+            "max_chars": 1500,
+        }
+    )
+    tools_called.append("ReadPDF")
+    outputs.append(read_pdf_output)
 
     read_image_tool = ReadImage()
     read_image_output = read_image_tool.call(
@@ -223,7 +229,8 @@ def main() -> int:
         and "match_count:" in glob_output
         and "hello.txt:1: Hello." in grep_output
         and "match_count:" in grep_output
-        and (read_pdf_output is None or ("source_type: pdf" in read_pdf_output and "Dummy PDF file" in read_pdf_output))
+        and "source_type: pdf" in read_pdf_output
+        and "Dummy PDF file" in read_pdf_output
         and "format: JPEG" in read_image_output
         and "source_type: image" in read_image_output
         and "mime_type: image/jpeg" in read_image_output

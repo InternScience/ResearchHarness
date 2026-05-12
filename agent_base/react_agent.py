@@ -23,7 +23,14 @@ from agent_base.tools.tool_file import Edit, Glob, Grep, Read, ReadImage, ReadPD
 from agent_base.tools.tool_runtime import Bash, TerminalInterrupt, TerminalKill, TerminalRead, TerminalStart, TerminalWrite
 from agent_base.tools.tool_user import AskUser
 from agent_base.tools.tool_web import ScholarSearch, WebFetch, WebSearch
-from agent_base.utils import PROJECT_ROOT, env_flag, load_dotenv, safe_jsonable
+from agent_base.utils import (
+    PROJECT_ROOT,
+    MissingRequiredEnvError,
+    env_flag,
+    load_dotenv,
+    require_required_env,
+    safe_jsonable,
+)
 
 import datetime
 import random
@@ -1178,6 +1185,7 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
 def main(argv: Optional[list[str]] = None) -> int:
     load_dotenv(PROJECT_ROOT / ".env")
     try:
+        require_required_env("ResearchHarness agent")
         prompt_text, trace_dir, workspace_root, role_prompt, role_prompt_files = _parse_cli_args(argv or sys.argv[1:])
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         agent = agent_cls(
@@ -1194,7 +1202,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         printer.print_header()
         agent._run_session(prompt_text, workspace_root=workspace_root, event_callback=printer.handle_event)
         return 0
-    except ValueError as exc:
+    except (MissingRequiredEnvError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

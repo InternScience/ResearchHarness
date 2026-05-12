@@ -44,6 +44,29 @@ def check_workspace_root_is_created_when_missing() -> tuple[bool, str]:
     return ok, json.dumps({"resolved": str(resolved), "exists": resolved.exists()}, indent=2)
 
 
+def check_required_env_is_enforced() -> tuple[bool, str]:
+    from agent_base.utils import REQUIRED_ENV_VARS, MissingRequiredEnvError, require_required_env
+
+    previous = {key: os.environ.get(key) for key in REQUIRED_ENV_VARS}
+    try:
+        for key in REQUIRED_ENV_VARS:
+            os.environ.pop(key, None)
+        try:
+            require_required_env("test context")
+        except MissingRequiredEnvError as exc:
+            text = str(exc)
+            missing = [key for key in REQUIRED_ENV_VARS if key in text]
+            ok = len(missing) == len(REQUIRED_ENV_VARS) and "test context missing required environment variables" in text
+            return ok, json.dumps({"error": text, "missing_reported": missing}, indent=2)
+        return False, json.dumps({"error": "missing env did not raise"}, indent=2)
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def check_llm_hard_timeout_interrupts_blocking_call() -> tuple[bool, str]:
     from agent_base.react_agent import LLMHardTimeoutError, llm_hard_timeout
 
@@ -1590,6 +1613,7 @@ def main() -> int:
 
     checks = [
         ("Workspace root auto-create", check_workspace_root_is_created_when_missing),
+        ("Required env enforced", check_required_env_is_enforced),
         ("ReadPDF relative image path", check_readpdf_relative_image_path),
         ("TerminalInterrupt remainder", check_terminal_interrupt_preserves_remainder),
         ("Agent runtime limit", check_agent_runtime_limit_on_tool_execution),
