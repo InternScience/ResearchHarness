@@ -79,7 +79,7 @@ class OpenAICompatError(Exception):
 
 @dataclass
 class ServerConfig:
-    workspace_root: Path
+    api_runs_dir: Path
     role_prompt: str = ""
     host: str = "127.0.0.1"
     port: int = 8686
@@ -374,7 +374,7 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
     payload = validate_chat_payload(payload)
     request_id = "chatcmpl_" + uuid4().hex
     run_id = "run_" + datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:8]
-    run_root = config.workspace_root / run_id
+    run_root = config.api_runs_dir / run_id
     agent_workspace = run_root / "agent_workspace"
     trace_dir = run_root / "agent_traces"
     agent_workspace.mkdir(parents=True, exist_ok=False)
@@ -483,7 +483,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "workspace_root": str(config.workspace_root),
+            "api_runs_dir": str(config.api_runs_dir),
             "input_wrapper": config.input_wrapper,
             "output_wrapper": config.output_wrapper,
         }
@@ -502,17 +502,17 @@ def create_app(config: ServerConfig) -> FastAPI:
 
 def serve(
     *,
-    workspace_root: str,
+    api_runs_dir: str,
     host: str = "127.0.0.1",
     port: int = 8686,
     role_prompt_files: Optional[list[str]] = None,
     input_wrapper: bool = True,
     output_wrapper: bool = True,
 ) -> None:
-    root = normalize_workspace_root(workspace_root)
+    root = normalize_workspace_root(api_runs_dir)
     role_prompt = read_role_prompt_files(role_prompt_files or [])
     config = ServerConfig(
-        workspace_root=root,
+        api_runs_dir=root,
         role_prompt=role_prompt,
         host=host,
         port=port,

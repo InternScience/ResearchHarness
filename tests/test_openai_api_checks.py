@@ -167,7 +167,7 @@ def main() -> int:
     try:
         api_response = run_chat_completion(
             payload,
-            ServerConfig(workspace_root=api_runs_root, input_wrapper=True, output_wrapper=True),
+            ServerConfig(api_runs_dir=api_runs_root, input_wrapper=True, output_wrapper=True),
         )
     finally:
         openai_server.MultiTurnReactAgent = previous_agent_cls

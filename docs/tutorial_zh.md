@@ -132,7 +132,7 @@ POST /v1/chat/completions
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -141,7 +141,7 @@ QA/VQA benchmark 部署，可以额外加 role prompt：
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -151,7 +151,7 @@ python3 serve_openai.py \
 
 | 参数 | 是否必需 | 默认值 | 含义 |
 | --- | --- | --- | --- |
-| `--workspace-root PATH` | 是 | 无 | API runs 的父目录；每个请求会创建一个子目录。 |
+| `--api-runs-dir PATH` | 是 | 无 | API runs 的父目录；每个请求会创建一个子目录。 |
 | `--host HOST` | 否 | `127.0.0.1` | 服务监听 host。 |
 | `--port PORT` | 否 | `8686` | 服务监听端口。 |
 | `--role-prompt-file PATH` | 否，可重复 | 无 | 追加 role prompt 到 base ResearchHarness prompt。 |
@@ -166,7 +166,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -176,7 +176,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -185,7 +185,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```
@@ -372,7 +372,7 @@ response.choices[0].message.content
 ```json
 {
   "status": "ok",
-  "workspace_root": "./workspace/api_runs",
+  "api_runs_dir": "./workspace/api_runs",
   "input_wrapper": true,
   "output_wrapper": true
 }

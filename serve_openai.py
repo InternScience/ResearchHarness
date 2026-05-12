@@ -12,8 +12,9 @@ from api.openai_server import serve
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Serve ResearchHarness through /v1/chat/completions.")
     parser.add_argument(
-        "--workspace-root",
+        "--api-runs-dir",
         required=True,
+        dest="api_runs_dir",
         help="Directory where the server creates one isolated subdirectory per request.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind. Defaults to 127.0.0.1.")
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         require_required_env("ResearchHarness API server")
         serve(
-            workspace_root=args.workspace_root,
+            api_runs_dir=args.api_runs_dir,
             host=args.host,
             port=args.port,
             role_prompt_files=list(args.role_prompt_files),

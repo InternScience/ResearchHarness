@@ -315,7 +315,7 @@ The server exposes:
 POST /v1/chat/completions
 ```
 
-Start the server in one terminal. `--workspace-root` is a parent directory used
+Start the server in one terminal. `--api-runs-dir` is a parent directory used
 only for API runs; each request gets its own isolated subdirectory under it, so
 separate users, scripts, and benchmark cases do not share files.
 
@@ -336,7 +336,7 @@ Default deployment for normal application or personal-assistant use:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -345,7 +345,7 @@ QA/VQA benchmark deployment with the optional benchmark role prompt:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -360,7 +360,7 @@ Strict-format benchmark mode usually keeps both wrappers on:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -370,7 +370,7 @@ Direct agent mode disables both wrappers and returns the agent's own final text:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -380,7 +380,7 @@ only the output wrapper:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```

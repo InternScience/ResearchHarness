@@ -138,7 +138,7 @@ Default deployment:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -147,7 +147,7 @@ QA/VQA benchmark deployment with a role prompt:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -157,7 +157,7 @@ python3 serve_openai.py \
 
 | Parameter | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `--workspace-root PATH` | yes | none | Parent directory for API runs. Each request gets one subdirectory. |
+| `--api-runs-dir PATH` | yes | none | Parent directory for API runs. Each request gets one subdirectory. |
 | `--host HOST` | no | `127.0.0.1` | Host to bind. |
 | `--port PORT` | no | `8686` | Port to bind. |
 | `--role-prompt-file PATH` | no, repeatable | none | Append role prompt text to the base ResearchHarness prompt. |
@@ -172,7 +172,7 @@ Strict-format benchmark mode:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -182,7 +182,7 @@ Direct agent mode:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -191,7 +191,7 @@ Simple input plus strict final formatting:
 
 ```bash
 python3 serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./workspace/api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```
@@ -385,7 +385,7 @@ Returns:
 ```json
 {
   "status": "ok",
-  "workspace_root": "./workspace/api_runs",
+  "api_runs_dir": "./workspace/api_runs",
   "input_wrapper": true,
   "output_wrapper": true
 }
