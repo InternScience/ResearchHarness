@@ -2,6 +2,8 @@
 AGENTS.md
 workspace/*
 !workspace/.gitkeep
+api_runs/*
+!api_runs/.gitkeep
 traces/*
 !traces/.gitkeep
 data/

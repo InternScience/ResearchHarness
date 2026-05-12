@@ -322,21 +322,25 @@ separate users, scripts, and benchmark cases do not share files.
 Each request creates:
 
 ```text
-./workspace/api_runs/
-  run_YYYYMMDD_HHMMSS_<random>/
-    agent_workspace/    # visible to the agent; Bash, Read, Write, ls, and cat start here
-      inputs/images/    # user-provided images, when present
-    agent_traces/       # API trace, agent trace, and session state files
+./api_runs/
+`-- run_YYYYMMDD_HHMMSS_<random>/
+    |-- agent_workspace/          # visible to the agent
+    |   `-- inputs/
+    |       `-- images/           # user-provided images, when present
+    `-- agent_trace/              # server-side trace and session state
+        |-- api_trace.jsonl
+        |-- trace_*.jsonl
+        `-- _session_state.json
 ```
 
 In deployment mode, traces are saved by default. Each request writes API wrapper
-events, agent traces, and session state into that run's `agent_traces/` directory.
+events, agent trace, and session state into that run's `agent_trace/` directory.
 
 Default deployment for normal application or personal-assistant use:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -345,7 +349,7 @@ QA/VQA benchmark deployment with the optional benchmark role prompt:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -360,7 +364,7 @@ Strict-format benchmark mode usually keeps both wrappers on:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -370,7 +374,7 @@ Direct agent mode disables both wrappers and returns the agent's own final text:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -380,7 +384,7 @@ only the output wrapper:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```
@@ -583,7 +587,7 @@ The harness uses a single workspace concept.
 - relative local file paths resolve from the workspace
 - `Bash` and `TerminalStart` start from the workspace by default
 
-The repository includes committed [workspace/.gitkeep](workspace/.gitkeep) and [traces/.gitkeep](traces/.gitkeep) files so both directories exist in Git, while runtime artifacts inside `workspace/` and `traces/` remain ignored.
+The repository includes committed [workspace/.gitkeep](workspace/.gitkeep), [api_runs/.gitkeep](api_runs/.gitkeep), and [traces/.gitkeep](traces/.gitkeep) files so these runtime roots exist in Git, while artifacts inside them remain ignored.
 
 ---
 

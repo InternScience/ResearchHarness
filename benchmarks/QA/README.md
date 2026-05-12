@@ -8,25 +8,29 @@ The recommended integration is the OpenAI-compatible synchronous API server:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/serve_openai.py \
-  --workspace-root ./workspace/api_runs
+  --api-runs-dir ./api_runs
 ```
 
 For QA/VQA benchmark runs, optionally add this benchmark role prompt:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/QA/role_prompt.md
 ```
 
 Each request creates a fresh run directory:
 
 ```text
-./workspace/api_runs/
-  run_YYYYMMDD_HHMMSS_<random>/
-    agent_workspace/    # visible to the agent
-      inputs/images/    # user-provided images, when present
-    records/            # API trace and agent trace files
+./api_runs/
+`-- run_YYYYMMDD_HHMMSS_<random>/
+    |-- agent_workspace/          # visible to the agent
+    |   `-- inputs/
+    |       `-- images/           # user-provided images, when present
+    `-- agent_trace/              # server-side trace and session state
+        |-- api_trace.jsonl
+        |-- trace_*.jsonl
+        `-- _session_state.json
 ```
 
 The input and output LLM wrappers are enabled by default:
@@ -39,7 +43,7 @@ the agent's direct final text instead, run:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/serve_openai.py \
-  --workspace-root ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -49,7 +53,7 @@ External benchmark runners can then use the regular OpenAI SDK with:
 ```python
 from openai import OpenAI
 
-client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8000/v1")
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
 
 response = client.chat.completions.create(
     model="researchharness",

@@ -138,7 +138,7 @@ Default deployment:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -147,7 +147,7 @@ QA/VQA benchmark deployment with a role prompt:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -172,7 +172,7 @@ Strict-format benchmark mode:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -182,7 +182,7 @@ Direct agent mode:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -191,7 +191,7 @@ Simple input plus strict final formatting:
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```
@@ -214,11 +214,15 @@ flowchart LR
 Each API request creates one run directory:
 
 ```text
-./workspace/api_runs/
-  run_YYYYMMDD_HHMMSS_<random>/
-    agent_workspace/
-      inputs/images/
-    agent_traces/
+./api_runs/
+`-- run_YYYYMMDD_HHMMSS_<random>/
+    |-- agent_workspace/
+    |   `-- inputs/
+    |       `-- images/
+    `-- agent_trace/
+        |-- api_trace.jsonl
+        |-- trace_*.jsonl
+        `-- _session_state.json
 ```
 
 Meaning:
@@ -228,7 +232,7 @@ Meaning:
 | `run_YYYYMMDD_HHMMSS_<random>/` | Per-request run root. |
 | `agent_workspace/` | The only workspace visible to the agent. File tools, Bash, `ls`, and `cat` start here. |
 | `agent_workspace/inputs/images/` | User-provided images saved from API requests. |
-| `agent_traces/` | API trace, agent trace, and runtime records. |
+| `agent_trace/` | API trace, agent trace, and runtime records. |
 
 For multimodal requests, image inputs are handled in two ways at the same time:
 the image content is passed to the backend model as initial multimodal input
@@ -238,7 +242,7 @@ local path during tool work.
 
 This separation keeps user-visible tool work separate from server-side trace files.
 In API deployment mode, traces are saved by default: every request writes
-`api_trace.jsonl`, `trace_*.jsonl`, and `_session_state.json` under that run's `agent_traces/`
+`api_trace.jsonl`, `trace_*.jsonl`, and `_session_state.json` under that run's `agent_trace/`
 directory.
 
 ## 6. Text Request with OpenAI SDK
@@ -385,7 +389,7 @@ Returns:
 ```json
 {
   "status": "ok",
-  "api_runs_dir": "./workspace/api_runs",
+  "api_runs_dir": "./api_runs",
   "input_wrapper": true,
   "output_wrapper": true
 }
@@ -419,7 +423,7 @@ CLI runs write traces only when `--trace-dir` is provided. Without
 API runs write traces under:
 
 ```text
-./workspace/api_runs/run_.../agent_traces/
+./api_runs/run_.../agent_trace/
 ```
 
 Important files:

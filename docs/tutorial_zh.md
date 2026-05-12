@@ -132,7 +132,7 @@ POST /v1/chat/completions
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686
 ```
@@ -141,7 +141,7 @@ QA/VQA benchmark 部署，可以额外加 role prompt：
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
   --role-prompt-file benchmarks/QA/role_prompt.md
@@ -166,7 +166,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --role-prompt-file benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
@@ -176,7 +176,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -185,7 +185,7 @@ python3 serve_openai.py \
 
 ```bash
 python3 serve_openai.py \
-  --api-runs-dir ./workspace/api_runs \
+  --api-runs-dir ./api_runs \
   --no-input-wrapper \
   --output-wrapper
 ```
@@ -205,11 +205,15 @@ flowchart LR
 每个 API 请求会创建一个 run 目录：
 
 ```text
-./workspace/api_runs/
-  run_YYYYMMDD_HHMMSS_<random>/
-    agent_workspace/
-      inputs/images/
-    agent_traces/
+./api_runs/
+`-- run_YYYYMMDD_HHMMSS_<random>/
+    |-- agent_workspace/
+    |   `-- inputs/
+    |       `-- images/
+    `-- agent_trace/
+        |-- api_trace.jsonl
+        |-- trace_*.jsonl
+        `-- _session_state.json
 ```
 
 含义：
@@ -219,7 +223,7 @@ flowchart LR
 | `run_YYYYMMDD_HHMMSS_<random>/` | 单个请求对应的 run 根目录。 |
 | `agent_workspace/` | agent 唯一可见的 workspace；文件工具、Bash、`ls`、`cat` 都从这里开始。 |
 | `agent_workspace/inputs/images/` | API 请求中用户提交的图片。 |
-| `agent_traces/` | API trace、agent trace 和 runtime 记录。 |
+| `agent_trace/` | API trace、agent trace 和 runtime 记录。 |
 
 对于多模态请求，图片会同时走两条路径：当底层模型支持多模态输入时，
 图片内容会作为初始多模态输入直接传给模型；同一张图片也会保存到
@@ -227,7 +231,7 @@ flowchart LR
 稳定的本地路径。
 
 这个结构把 agent 可见工作目录和服务端记录目录隔离开。
-在 API 部署模式下，trace 默认保存：每个请求都会在自己的 `agent_traces/`
+在 API 部署模式下，trace 默认保存：每个请求都会在自己的 `agent_trace/`
 目录下写入 `api_trace.jsonl`、`trace_*.jsonl` 和 `_session_state.json`。
 
 ## 6. 纯文本 OpenAI SDK 请求
@@ -372,7 +376,7 @@ response.choices[0].message.content
 ```json
 {
   "status": "ok",
-  "api_runs_dir": "./workspace/api_runs",
+  "api_runs_dir": "./api_runs",
   "input_wrapper": true,
   "output_wrapper": true
 }
@@ -406,7 +410,7 @@ CLI 运行只有在传入 `--trace-dir` 时才会写 trace。如果不传
 API 运行时，记录在：
 
 ```text
-./workspace/api_runs/run_.../agent_traces/
+./api_runs/run_.../agent_trace/
 ```
 
 重要文件：

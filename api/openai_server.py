@@ -376,7 +376,7 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
     run_id = "run_" + datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:8]
     run_root = config.api_runs_dir / run_id
     agent_workspace = run_root / "agent_workspace"
-    trace_dir = run_root / "agent_traces"
+    trace_dir = run_root / "agent_trace"
     agent_workspace.mkdir(parents=True, exist_ok=False)
     trace_dir.mkdir(parents=True, exist_ok=False)
     prepared = prepare_openai_input(payload["messages"], agent_workspace)
