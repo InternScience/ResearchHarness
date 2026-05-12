@@ -38,8 +38,8 @@ and easy to trust as infrastructure.
 - [📰 News](#-news)
 - [✨ Highlights](#-highlights)
 - [🧭 Positioning](#-positioning)
-- [📦 Installation and Configuration](#-installation-and-configuration)
 - [🏗 Project Structure](#-project-structure)
+- [📦 Installation and Configuration](#-installation-and-configuration)
 - [🖥 CLI Usage](#-cli-usage)
 - [🚀 OpenAI-Compatible API Deployment](#-openai-compatible-api-deployment)
 - [🧠 How It Works](#-how-it-works)
@@ -64,8 +64,8 @@ If you are new to the project, the recommended reading order is:
 
 1. Read the tutorial in your preferred language.
 2. Skim [News](#-news), [Highlights](#-highlights), and [Positioning](#-positioning) to understand what the harness is and what changed recently.
-3. Complete [Installation and Configuration](#-installation-and-configuration).
-4. Skim [Project Structure](#-project-structure) so you know where the runtime, tools, API server, tests, and benchmark adapters live.
+3. Skim [Project Structure](#-project-structure) so you know where the runtime, tools, API server, tests, and benchmark adapters live.
+4. Complete [Installation and Configuration](#-installation-and-configuration).
 5. Run either [CLI Usage](#-cli-usage) or [OpenAI-Compatible API Deployment](#-openai-compatible-api-deployment).
 6. Read [How It Works](#-how-it-works) only after you need the runtime loop, trace, compaction, or PDF/image details.
 
@@ -164,6 +164,52 @@ the core runtime.
 | Fair benchmark base | It keeps the runtime contract explicit and lightweight, which is useful for benchmarks such as ResearchClawBench. |
 | Baseline and meta harness | It is small enough to inspect and modify, making it a practical reference baseline and an object of optimization itself. |
 | Personal assistant | It already includes file, shell, PDF, image, and report-oriented workflows, so it is useful outside benchmark settings too. |
+
+---
+
+## 🏗 Project Structure
+
+Start here if you are reading the codebase for the first time.
+
+### Core runtime
+
+- [run_agent.py](run_agent.py): thin command-line entrypoint for direct agent runs
+- [serve_openai.py](serve_openai.py): OpenAI-compatible API server entrypoint
+- [api/openai_server.py](api/openai_server.py): `/v1/chat/completions` request handling, wrappers, and per-request run directories
+- [agent_base/react_agent.py](agent_base/react_agent.py): main ReAct loop, model calls, tool-call handling, trace/session state integration
+- [agent_base/base.py](agent_base/base.py): base agent hooks for extension and benchmark adapters
+- [agent_base/prompt.py](agent_base/prompt.py): base system prompt composition
+- [agent_base/trace_utils.py](agent_base/trace_utils.py): flat JSONL trace writer
+- [agent_base/console_utils.py](agent_base/console_utils.py): readable CLI event printing
+
+### Tools
+
+- [agent_base/tools/tool_file.py](agent_base/tools/tool_file.py): file, PDF, and image tools
+- [agent_base/tools/tool_runtime.py](agent_base/tools/tool_runtime.py): Bash and persistent terminal tools
+- [agent_base/tools/tool_web.py](agent_base/tools/tool_web.py): web search, scholar search, and webpage fetching
+- [agent_base/tools/README.md](agent_base/tools/README.md): detailed tool documentation
+
+### Benchmark and API Adapters
+
+- [benchmarks/README.md](benchmarks/README.md): benchmark adapter overview
+- [benchmarks/](benchmarks): benchmark-specific role prompts and adapters
+- [benchmarks/QA/README.md](benchmarks/QA/README.md): QA/VQA OpenAI-compatible API usage
+
+### Docs and Tests
+
+- [docs/tutorial_en.md](docs/tutorial_en.md): detailed English tutorial
+- [docs/tutorial_zh.md](docs/tutorial_zh.md): detailed Chinese tutorial
+- [tests/](tests): tool checks and end-to-end agent tests
+- [tests/example_files/](tests/example_files): fixed local fixtures
+
+### Runtime Roots
+
+- [workspace/](workspace): default local CLI workspace root
+- [api_runs/](api_runs): default API deployment run root
+- [traces/](traces): default CLI trace output root
+
+Only the `.gitkeep` files in these runtime roots are tracked. Generated files
+inside them are ignored.
 
 ---
 
@@ -272,52 +318,6 @@ Inspect the base prompt assets:
 python3 -m agent_base.prompt --list-assets
 python3 -m agent_base.prompt --show-system
 ```
-
----
-
-## 🏗 Project Structure
-
-Start here if you are reading the codebase for the first time.
-
-### Core runtime
-
-- [run_agent.py](run_agent.py): thin command-line entrypoint for direct agent runs
-- [serve_openai.py](serve_openai.py): OpenAI-compatible API server entrypoint
-- [api/openai_server.py](api/openai_server.py): `/v1/chat/completions` request handling, wrappers, and per-request run directories
-- [agent_base/react_agent.py](agent_base/react_agent.py): main ReAct loop, model calls, tool-call handling, trace/session state integration
-- [agent_base/base.py](agent_base/base.py): base agent hooks for extension and benchmark adapters
-- [agent_base/prompt.py](agent_base/prompt.py): base system prompt composition
-- [agent_base/trace_utils.py](agent_base/trace_utils.py): flat JSONL trace writer
-- [agent_base/console_utils.py](agent_base/console_utils.py): readable CLI event printing
-
-### Tools
-
-- [agent_base/tools/tool_file.py](agent_base/tools/tool_file.py): file, PDF, and image tools
-- [agent_base/tools/tool_runtime.py](agent_base/tools/tool_runtime.py): Bash and persistent terminal tools
-- [agent_base/tools/tool_web.py](agent_base/tools/tool_web.py): web search, scholar search, and webpage fetching
-- [agent_base/tools/README.md](agent_base/tools/README.md): detailed tool documentation
-
-### Benchmark and API Adapters
-
-- [benchmarks/README.md](benchmarks/README.md): benchmark adapter overview
-- [benchmarks/](benchmarks): benchmark-specific role prompts and adapters
-- [benchmarks/QA/README.md](benchmarks/QA/README.md): QA/VQA OpenAI-compatible API usage
-
-### Docs and Tests
-
-- [docs/tutorial_en.md](docs/tutorial_en.md): detailed English tutorial
-- [docs/tutorial_zh.md](docs/tutorial_zh.md): detailed Chinese tutorial
-- [tests/](tests): tool checks and end-to-end agent tests
-- [tests/example_files/](tests/example_files): fixed local fixtures
-
-### Runtime Roots
-
-- [workspace/](workspace): default local CLI workspace root
-- [api_runs/](api_runs): default API deployment run root
-- [traces/](traces): default CLI trace output root
-
-Only the `.gitkeep` files in these runtime roots are tracked. Generated files
-inside them are ignored.
 
 ---
 
