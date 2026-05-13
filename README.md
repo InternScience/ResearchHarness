@@ -506,14 +506,14 @@ Each request creates:
 
 ```text
 ./api_runs/
-`-- run_YYYYMMDD_HHMMSS_<random>/
-    |-- agent_workspace/          # visible to the agent
-    |   `-- inputs/
-    |       `-- images/           # user-provided images, when present
-    `-- agent_trace/              # server-side trace and session state
-        |-- api_trace.jsonl
-        |-- trace_*.jsonl
-        `-- _session_state.json
+└── run_YYYYMMDD_HHMMSS_<random>/
+    ├── agent_workspace/          # visible to the agent
+    │   └── inputs/
+    │       └── images/           # user-provided images, when present
+    └── agent_trace/              # server-side trace and session state
+        ├── api_trace.jsonl
+        ├── trace_*.jsonl
+        └── _session_state.json
 ```
 
 In deployment mode, traces are saved by default. Each request writes API wrapper
