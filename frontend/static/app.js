@@ -126,6 +126,7 @@
   var pendingAskId = "";
   var keepSubmittedMessageOnReset = false;
   var autoFollowTimeline = true;
+  var conversationStarted = false;
   var images = [];
   var COLLAPSED_STEP_HEIGHT = 220;
 
@@ -395,6 +396,7 @@
         } else {
           clearTimeline();
         }
+        conversationStarted = false;
         clearAskRequest();
       } else if (message.type === "uploaded_images") {
         addEvent("runtime", "Uploaded images saved", "<pre>" + escapeHtml((message.paths || []).join("\n")) + "</pre>", []);
@@ -406,10 +408,11 @@
       } else if (message.type === "ask_user") {
         showAskRequest(message);
       } else if (message.type === "run_finished") {
+        conversationStarted = true;
         setRunning(false, "Done");
         clearAskRequest();
         setStatus("Done", "done");
-        runMeta.textContent = "Finished: " + (message.termination || "result");
+        runMeta.textContent = "Finished: " + (message.termination || "result") + ". Type a follow-up or click New chat.";
       } else if (message.type === "run_error") {
         keepSubmittedMessageOnReset = false;
         clearAskRequest();
@@ -450,16 +453,18 @@
     var prompt = promptInput.value.trim();
     if (!prompt) return;
     var sentImages = images.slice();
-    clearTimeline();
+    var continueConversation = conversationStarted;
+    if (!continueConversation) clearTimeline();
     addMessage("user", prompt, sentImages);
-    keepSubmittedMessageOnReset = true;
+    keepSubmittedMessageOnReset = !continueConversation;
     setRunning(true, "Starting");
-    runMeta.textContent = "Starting agent run...";
+    runMeta.textContent = continueConversation ? "Continuing agent conversation..." : "Starting agent run...";
     ws.send(JSON.stringify({
       type: "start",
       prompt: prompt,
       workspace_root: workspaceInput.value,
-      images: sentImages
+      images: sentImages,
+      continue_conversation: continueConversation
     }));
     promptInput.value = "";
     promptInput.style.height = "auto";
@@ -619,6 +624,7 @@
       renderImages();
       clearTimeline();
       clearAskRequest();
+      conversationStarted = false;
       runMeta.textContent = "New conversation.";
       setRunning(false, "Idle");
     }

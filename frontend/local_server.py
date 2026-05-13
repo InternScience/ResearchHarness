@@ -57,6 +57,8 @@ class FrontendRunBridge:
         self.loop = loop
         self.outbound: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.cancelled = threading.Event()
+        self.conversation_messages: list[dict[str, Any]] | None = None
+        self.conversation_workspace_root: str = ""
         self._pending_answers: dict[str, str] = {}
         self._pending_events: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
@@ -189,6 +191,7 @@ def _run_agent_thread(
     prompt: str,
     workspace_root: Path,
     initial_content_parts: list[dict[str, Any]],
+    prior_messages: list[dict[str, Any]] | None = None,
 ) -> None:
     try:
         load_dotenv(PROJECT_ROOT / ".env")
@@ -212,7 +215,10 @@ def _run_agent_thread(
             workspace_root=str(workspace_root),
             event_callback=bridge.trace_event,
             initial_content_parts=initial_content_parts or None,
+            prior_messages=prior_messages,
         )
+        bridge.conversation_messages = result.get("messages", [])
+        bridge.conversation_workspace_root = str(workspace_root)
         bridge.send(
             {
                 "type": "run_finished",
@@ -360,11 +366,25 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         message.get("images", []) if isinstance(message.get("images", []), list) else [],
                     )
                     run_prompt = _prompt_with_uploaded_image_paths(prompt, saved_paths)
+                    continue_conversation = bool(message.get("continue_conversation"))
+                    prior_messages = None
+                    if continue_conversation:
+                        if not bridge.conversation_messages:
+                            bridge.send({"type": "run_error", "error": "No active conversation is available on the server. Click New chat and start again."})
+                            continue
+                        elif bridge.conversation_workspace_root and bridge.conversation_workspace_root != str(workspace_root):
+                            bridge.send({"type": "run_error", "error": "Workspace changed. Start a new chat before using a different workspace."})
+                            continue
+                        else:
+                            prior_messages = bridge.conversation_messages
                 except ValueError as exc:
                     bridge.send({"type": "run_error", "error": str(exc)})
                     continue
                 bridge.cancelled.clear()
-                bridge.send({"type": "conversation_reset"})
+                if not continue_conversation:
+                    bridge.conversation_messages = None
+                    bridge.conversation_workspace_root = str(workspace_root)
+                    bridge.send({"type": "conversation_reset"})
                 if saved_paths:
                     bridge.send({"type": "uploaded_images", "paths": saved_paths})
                 run_thread = threading.Thread(
@@ -374,6 +394,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "prompt": run_prompt,
                         "workspace_root": workspace_root,
                         "initial_content_parts": image_parts,
+                        "prior_messages": prior_messages,
                     },
                     daemon=True,
                 )
@@ -386,6 +407,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 if run_thread is not None and run_thread.is_alive():
                     bridge.send({"type": "run_error", "error": "The current run is still active. Start a new conversation after it finishes."})
                 else:
+                    bridge.conversation_messages = None
+                    bridge.conversation_workspace_root = ""
                     bridge.send({"type": "conversation_reset"})
             else:
                 bridge.send({"type": "run_error", "error": f"Unknown websocket message type: {message_type}"})

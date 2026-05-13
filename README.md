@@ -74,8 +74,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
-- **2026-05-13: Local browser frontend**
-  ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, and handles `AskUser` replies through the same chat input box. Frontend, CLI, and API multi-image inputs all save user-provided images under `inputs/images/` inside the agent workspace and keep each saved path visible in the agent context.
+- **2026-05-13: Local browser frontend and conversational CLI**
+  ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, handles `AskUser` replies through the same chat input box, and lets users continue after a final answer without losing prior context. Interactive CLI runs can also continue with follow-up prompts; API deployment remains intentionally one request -> one answer.
 - **2026-05-12: OpenAI-compatible API server**
   ResearchHarness can now be deployed as a synchronous `/v1/chat/completions` service. Existing OpenAI SDK clients can send plain-text or multimodal requests, while the server creates an isolated workspace per request and uses input/output LLM wrappers to keep agent execution stable and final answers format-compliant.
 - **2026-04-30: Interactive `AskUser` tool**
@@ -335,6 +335,8 @@ Details:
   meaningful agent options remain command-line options. Use
   `--role-prompt-file` to append role guidance and `--trace-dir` to persist
   frontend agent traces.
+- In CLI mode, interactive terminals enable follow-up chat by default. Use
+  `--no-chat` for one-shot behavior or `--chat` to force follow-up mode.
 - Model and sampling settings such as `API_KEY`, `API_BASE`, `MODEL_NAME`,
   `TEMPERATURE`, `MAX_INPUT_TOKENS`, and `LLM_MAX_OUTPUT_TOKENS` currently come
   from environment variables or `.env`, not from direct CLI flags.
@@ -411,6 +413,12 @@ Each `--images` path must exist. ResearchHarness copies every image into
 part, and includes each saved relative path in the user text so later rounds can
 recover images with `ReadImage`.
 
+In an interactive terminal, the CLI stays open after the final answer and asks
+for a follow-up prompt. The next run keeps the previous message history,
+including tool results and saved image path hints, so the agent can continue the
+same conversation. Press `Ctrl+C` or send EOF to exit. Use `--no-chat` when a
+script or benchmark needs strict one-shot behavior.
+
 The CLI is not limited to a final one-line answer. During execution it prints a
 readable step-by-step stream so you can inspect what the agent is doing without
 opening trace files:
@@ -455,6 +463,9 @@ The frontend keeps only the current conversation in the page. It runs the agent
 directly in the selected existing workspace folder, streams assistant rounds and
 tool results over WebSocket, supports `AskUser` replies through the same chat
 input box, and accepts image attachments by file picker, drag-and-drop, or paste.
+After a run finishes, typing another message continues the same conversation
+with prior messages preserved. Click **New chat** to clear the current
+conversation and start over.
 
 The workspace picker is an in-page directory browser backed by the local server,
 not a native OS dialog. It supports Unicode paths, including Chinese folder
@@ -481,6 +492,11 @@ The server exposes:
 ```http
 POST /v1/chat/completions
 ```
+
+API deployment is intentionally stateless at the conversation level: each HTTP
+request creates one isolated run and returns one final assistant message. If a
+client wants multi-turn API behavior, it should send the desired prior context
+in the request messages or manage that state outside ResearchHarness.
 
 Start the server in one terminal. `--api-runs-dir` is a parent directory used
 only for API runs; each request gets its own isolated subdirectory under it, so
@@ -512,7 +528,7 @@ python3 run_server.py \
   --port 8686
 ```
 
-QA/VQA benchmark deployment with the optional benchmark role prompt:
+QA/VQA benchmark deployment with the optional benchmark role overlay:
 
 ```bash
 python3 run_server.py \

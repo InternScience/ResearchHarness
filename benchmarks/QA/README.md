@@ -11,7 +11,7 @@ python3 /abs/path/to/ResearchHarness/run_server.py \
   --api-runs-dir ./api_runs
 ```
 
-For QA/VQA benchmark runs, optionally add this benchmark role prompt:
+For QA/VQA benchmark runs, optionally add this benchmark role overlay:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/run_server.py \

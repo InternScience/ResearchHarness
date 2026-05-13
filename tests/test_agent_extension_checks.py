@@ -31,6 +31,7 @@ def main() -> int:
         AVAILABLE_TOOL_MAP,
         MultiTurnReactAgent,
         _parse_cli_args,
+        assistant_text_content,
         prepare_messages_for_llm,
         resolve_agent_class_for_role_prompt_files,
     )
@@ -122,6 +123,45 @@ def main() -> int:
     except ValueError as exc:
         rcb_forbidden_error = str(exc)
 
+    class ContinueAgent(MultiTurnReactAgent):
+        def __init__(self):
+            super().__init__(
+                function_list=[],
+                llm={
+                    "model": "fake-model",
+                    "generate_cfg": {
+                        "max_input_tokens": 10000,
+                        "max_retries": 1,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                        "presence_penalty": 0.0,
+                    },
+                },
+                trace_dir=str(trace_dir),
+            )
+            self.call_count = 0
+            self.second_request_messages = []
+
+        def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
+            self.call_count += 1
+            if self.call_count == 2:
+                self.second_request_messages = msgs
+            return {
+                "status": "ok",
+                "finish_reason": "stop",
+                "content": "first answer" if self.call_count == 1 else "second answer",
+                "tool_calls": [],
+            }
+
+    continue_agent = ContinueAgent()
+    first_turn = continue_agent._run_session("Remember this: alpha.", workspace_root=str(TMP_DIR / "continue_workspace"))
+    second_turn = continue_agent._run_session(
+        "What did I ask you to remember?",
+        workspace_root=str(TMP_DIR / "continue_workspace"),
+        prior_messages=first_turn["messages"],
+    )
+    second_request_text = "\n".join(assistant_text_content(message.get("content")) for message in continue_agent.second_request_messages)
+
     cli_image_source = TMP_DIR / "source_image.png"
     cli_image_source.write_bytes(b"fake png bytes")
     cli_second_image_source = TMP_DIR / "source_image_2.jpg"
@@ -143,9 +183,11 @@ def main() -> int:
         *image_input_content_parts(cli_second_data_url, cli_second_saved_path),
     ]
     cli_prompt = append_saved_image_paths_to_prompt("Inspect the images.", [cli_saved_path, cli_second_saved_path])
-    _, _, _, _, _, parsed_image_args = _parse_cli_args(
+    _, _, _, _, _, parsed_image_args, parsed_chat_arg = _parse_cli_args(
         ["Inspect the images.", "--images", str(cli_image_source), str(cli_second_image_source)]
     )
+    _, _, _, _, _, _, parsed_chat_enabled = _parse_cli_args(["Inspect the images.", "--chat"])
+    _, _, _, _, _, _, parsed_chat_disabled = _parse_cli_args(["Inspect the images.", "--no-chat"])
     aged_messages, image_aging = prepare_messages_for_llm(
         [
             {"role": "system", "content": "system"},
@@ -170,9 +212,13 @@ def main() -> int:
                 "cli_saved_path": cli_saved_path,
                 "cli_second_saved_path": cli_second_saved_path,
                 "parsed_image_args": parsed_image_args,
+                "parsed_chat_arg": parsed_chat_arg,
+                "parsed_chat_enabled": parsed_chat_enabled,
+                "parsed_chat_disabled": parsed_chat_disabled,
                 "image_aging": image_aging,
                 "system_prompt_tail": system_message[-300:],
                 "qa_prompt_mentions_synchronous": "synchronous" in qa_prompt_text.lower(),
+                "continued_result": second_turn.get("result_text"),
             },
             ensure_ascii=False,
             indent=2,
@@ -197,11 +243,17 @@ def main() -> int:
         and "AskUser" in AVAILABLE_TOOL_MAP
         and "AskUser" not in rcb_agent.tool_names
         and "AskUser" in rcb_forbidden_error
+        and second_turn.get("result_text") == "second answer"
+        and "first answer" in second_request_text
+        and "What did I ask you to remember?" in second_request_text
         and cli_saved_path.startswith("inputs/images/")
         and cli_second_saved_path.startswith("inputs/images/")
         and (cli_workspace / cli_saved_path).exists()
         and (cli_workspace / cli_second_saved_path).exists()
         and parsed_image_args == [str(cli_image_source), str(cli_second_image_source)]
+        and parsed_chat_arg is None
+        and parsed_chat_enabled is True
+        and parsed_chat_disabled is False
         and isinstance(aged_user_content, list)
         and any("Saved local path: inputs/images/" in str(part.get("text", "")) for part in aged_user_content if isinstance(part, dict))
         and image_aging["omitted_image_count"] == 2

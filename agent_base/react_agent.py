@@ -816,6 +816,7 @@ class MultiTurnReactAgent(BaseAgent):
         workspace_root: Optional[str] = None,
         event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
         initial_content_parts: Optional[Sequence[dict[str, Any]]] = None,
+        prior_messages: Optional[Sequence[dict[str, Any]]] = None,
     ) -> dict:
         """Internal execution path with trace data for tests and debugging."""
         if not isinstance(prompt, str) or not prompt.strip():
@@ -840,7 +841,19 @@ class MultiTurnReactAgent(BaseAgent):
             if not isinstance(safe_initial_parts, list) or not all(isinstance(part, dict) for part in safe_initial_parts):
                 raise ValueError("initial_content_parts must contain only dict content parts.")
             user_content: Any = [{"type": "text", "text": user_content}, *safe_initial_parts]
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
+        continuing_conversation = prior_messages is not None
+        if continuing_conversation:
+            if not isinstance(prior_messages, Sequence) or isinstance(prior_messages, (str, bytes)):
+                raise ValueError("prior_messages must be a sequence of message dicts.")
+            safe_prior_messages = safe_jsonable(list(prior_messages))
+            if not isinstance(safe_prior_messages, list) or not all(isinstance(message, dict) for message in safe_prior_messages):
+                raise ValueError("prior_messages must contain only dict messages.")
+            messages = list(safe_prior_messages)
+            if not messages or messages[0].get("role") != "system":
+                messages.insert(0, {"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
         max_llm_calls = self.max_llm_calls
         max_input_tokens = int(self.llm_generate_cfg.get("max_input_tokens", DEFAULT_MAX_INPUT_TOKENS))
         max_output_tokens = int(self.llm_generate_cfg.get("max_output_tokens", llm_max_output_tokens()))
@@ -907,7 +920,14 @@ class MultiTurnReactAgent(BaseAgent):
                 "session_state_path": str(self.session_state_path) if self.session_state_path else "",
             }
 
-        trace_writer.append(role="system", text=system_prompt, turn_index=0)
+        if continuing_conversation:
+            trace_writer.append(
+                role="runtime",
+                text=f"Continuing existing conversation with {len(messages) - 1} prior/current non-system messages.",
+                turn_index=0,
+            )
+        else:
+            trace_writer.append(role="system", text=system_prompt, turn_index=0)
         trace_writer.append(role="user", text=message_trace_text(user_content), turn_index=0)
         persist_state()
 
@@ -1287,7 +1307,7 @@ def resolve_agent_class_for_role_prompt_files(role_prompt_files: Sequence[str]) 
     return MultiTurnReactAgent
 
 
-def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str], str, list[str], list[str]]:
+def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str], str, list[str], list[str], Optional[bool]]:
     parser = argparse.ArgumentParser(description="Run the local agent directly from agent_base.react_agent.")
     parser.add_argument("prompt", nargs="*", help="Prompt text.")
     parser.add_argument("--prompt-file", help="Optional UTF-8 text file containing the prompt.")
@@ -1313,6 +1333,12 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         metavar="PATH",
         help="Attach one or more local image paths to the initial user message.",
     )
+    parser.add_argument(
+        "--chat",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Continue asking for follow-up user messages after each final answer. Defaults to on only in an interactive terminal.",
+    )
     args = parser.parse_args(argv)
 
     prompt_text = ""
@@ -1331,6 +1357,7 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         role_prompt,
         list(args.role_prompt_files),
         [path for group in args.image_paths for path in group],
+        args.chat,
     )
 
 
@@ -1338,7 +1365,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     load_dotenv(PROJECT_ROOT / ".env")
     try:
         require_required_env("ResearchHarness agent")
-        prompt_text, trace_dir, workspace_root, role_prompt, role_prompt_files, image_paths = _parse_cli_args(argv or sys.argv[1:])
+        prompt_text, trace_dir, workspace_root, role_prompt, role_prompt_files, image_paths, chat_arg = _parse_cli_args(argv or sys.argv[1:])
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         agent = agent_cls(
             llm=default_llm_config(),
@@ -1363,12 +1390,31 @@ def main(argv: Optional[list[str]] = None) -> int:
             prompt=run_prompt,
         )
         printer.print_header()
-        agent._run_session(
+        session = agent._run_session(
             run_prompt,
             workspace_root=str(resolved_workspace_root),
             event_callback=printer.handle_event,
             initial_content_parts=initial_content_parts or None,
         )
+        chat_enabled = chat_arg if chat_arg is not None else (sys.stdin.isatty() and sys.stdout.isatty())
+        messages = session.get("messages", [])
+        while chat_enabled:
+            try:
+                followup = input("\n[ResearchHarness] Follow-up (Ctrl+C to exit): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\n[ResearchHarness] Chat ended.")
+                break
+            if not followup:
+                continue
+            print(f"\n[ResearchHarness] Continuing conversation: {followup}")
+            printer.reset_rounds()
+            session = agent._run_session(
+                followup,
+                workspace_root=str(resolved_workspace_root),
+                event_callback=printer.handle_event,
+                prior_messages=messages,
+            )
+            messages = session.get("messages", messages)
         return 0
     except (MissingRequiredEnvError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

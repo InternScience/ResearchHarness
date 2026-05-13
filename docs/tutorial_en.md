@@ -123,6 +123,16 @@ Each image path must exist. RH copies images into `./workspace/inputs/images/`,
 sends them as initial `image_url` content parts, and adds each saved relative
 path to the user text so later rounds can call `ReadImage` on the same files.
 
+In an interactive terminal, CLI runs continue after a final answer and prompt
+for a follow-up. The follow-up run keeps the prior messages, tool results, and
+saved image path hints. Press `Ctrl+C` or send EOF to exit. Use `--no-chat` for
+strict one-shot behavior, or `--chat` to force follow-up mode.
+
+For browser-based local use, run `python3 run_frontend.py`. The frontend uses an
+existing workspace selected in the page, streams tool steps live, accepts one or
+more image attachments, and continues the current conversation after each final
+answer until you click **New chat**.
+
 ### CLI Parameters
 
 | Parameter | Required | Meaning |
@@ -133,6 +143,7 @@ path to the user text so later rounds can call `ReadImage` on the same files.
 | `--trace-dir PATH` | no | Directory where `trace_*.jsonl` is written. |
 | `--role-prompt-file PATH` | no, repeatable | Append role-specific prompt text to the base system prompt. |
 | `--images PATH [PATH ...]` | no | Copy one or more local images into `inputs/images/` and attach them to the initial user message. |
+| `--chat` / `--no-chat` | no | Enable or disable CLI follow-up mode. Default: enabled only when stdin and stdout are interactive terminals. |
 
 ## 4. OpenAI-Compatible API Server
 
@@ -156,7 +167,7 @@ python3 run_server.py \
   --port 8686
 ```
 
-QA/VQA benchmark deployment with a role prompt:
+QA/VQA benchmark deployment with a benchmark role overlay:
 
 ```bash
 python3 run_server.py \
@@ -213,6 +224,11 @@ The input wrapper rewrites the original user request into a stable task for the
 agent. The output wrapper formats the agent result to match the user's requested
 answer contract. Wrappers must not invent new facts; they only normalize input
 and format output.
+
+The API server is intentionally one request -> one answer. It does not keep a
+server-side conversation between HTTP requests. If an application needs API
+multi-turn behavior, keep that state in the client and send the needed prior
+context in later requests.
 
 ```mermaid
 flowchart LR

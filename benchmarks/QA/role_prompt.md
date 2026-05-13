@@ -1,4 +1,4 @@
-# QA Benchmark Role Prompt
+# Benchmark Role Overlay
 
 You are running inside ResearchHarness for a QA or VQA benchmark.
 

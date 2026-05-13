@@ -118,6 +118,15 @@ python3 run_agent.py "Read the image and return JSON." \
 作为初始 `image_url` content part 传给模型，同时把每个保存后的相对路径写进
 用户文本，让后续轮次可以用 `ReadImage` 重新读取这些图片。
 
+在交互式终端中，CLI 会在最终回答后继续等待 follow-up。下一轮会保留之前的
+messages、工具结果和图片保存路径提示。按 `Ctrl+C` 或发送 EOF 可退出。脚本或
+benchmark 如果需要严格的一问一答行为，使用 `--no-chat`；需要强制开启时使用
+`--chat`。
+
+如果需要浏览器本地界面，运行 `python3 run_frontend.py`。前端使用页面中选择的
+已有 workspace，实时显示工具步骤，支持一张或多张图片附件，并在每次最终回答后
+继续当前对话，直到点击 **New chat**。
+
 ### CLI 参数
 
 | 参数 | 是否必需 | 含义 |
@@ -128,6 +137,7 @@ python3 run_agent.py "Read the image and return JSON." \
 | `--trace-dir PATH` | 否 | 写入 `trace_*.jsonl` 的目录。 |
 | `--role-prompt-file PATH` | 否，可重复 | 追加 role-specific prompt 到 base system prompt。 |
 | `--images PATH [PATH ...]` | 否 | 把一张或多张本地图片复制到 `inputs/images/` 并附加到初始用户消息。 |
+| `--chat` / `--no-chat` | 否 | 开启或关闭 CLI follow-up 模式。默认只在 stdin 和 stdout 都是交互式终端时开启。 |
 
 ## 4. OpenAI-Compatible API Server
 
@@ -150,7 +160,7 @@ python3 run_server.py \
   --port 8686
 ```
 
-QA/VQA benchmark 部署，可以额外加 role prompt：
+QA/VQA benchmark 部署，可以额外加 benchmark role overlay：
 
 ```bash
 python3 run_server.py \
@@ -204,6 +214,10 @@ python3 run_server.py \
 ```
 
 input wrapper 的作用是把原始用户请求整理为适合 agent 稳定执行的任务。output wrapper 的作用是把 agent 的最终结果整理为用户要求的答案格式。wrapper 不应该引入新事实，只做输入规范化和输出格式化。
+
+API server 有意保持一问一答：每个 HTTP 请求创建一次隔离 run，并返回一个最终
+assistant message。服务端不会跨请求保存 conversation state。如果应用需要 API
+多轮对话，应由客户端保存状态，并在后续请求中传入需要的上下文。
 
 ```mermaid
 flowchart LR

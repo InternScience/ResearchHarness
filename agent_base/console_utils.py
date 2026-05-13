@@ -17,6 +17,9 @@ class ConsoleEventPrinter:
         print("Prompt:")
         print(self.prompt)
 
+    def reset_rounds(self) -> None:
+        self._last_round_printed = None
+
     def _print_round_header(self, turn_index: int) -> None:
         if turn_index <= 0 or self._last_round_printed == turn_index:
             return

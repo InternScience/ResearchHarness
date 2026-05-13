@@ -119,9 +119,15 @@ def test_frontend_static_interaction_contract() -> None:
     assert "configure_frontend" in launcher
     assert "role_prompt=FRONTEND_ROLE_PROMPT or None" in server
     assert "trace_dir=FRONTEND_TRACE_DIR" in server
+    assert "prior_messages=prior_messages" in server
+    assert "conversation_messages" in server
+    assert "No active conversation is available on the server" in server
     assert "/api/workspace-directories" in js
     assert "autoFollowTimeline" in js
     assert "syncTimelineFollowMode" in js
+    assert "conversationStarted" in js
+    assert "continue_conversation" in js
+    assert "Type a follow-up or click New chat" in js
     assert "setEventExpanded" in js
     assert "body.scrollHeight" in js
     assert "keepSubmittedMessageOnReset" in js
