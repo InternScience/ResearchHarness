@@ -122,12 +122,17 @@ button {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   border-radius: 22px;
   padding: 10px 12px;
+  background: var(--panel-strong);
+  box-shadow: 0 14px 38px rgba(var(--glow-rgb), 0.15), 0 3px 10px rgba(0, 0, 0, 0.08);
 }
 
 .brand {
@@ -216,31 +221,32 @@ button {
 }
 
 .workspace-strip {
+  position: sticky;
+  top: 66px;
+  z-index: 4;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   margin-top: 10px;
   border-radius: 18px;
   padding: 9px 12px;
+  background: var(--panel-strong);
+  box-shadow: 0 14px 38px rgba(var(--glow-rgb), 0.15), 0 3px 10px rgba(0, 0, 0, 0.08);
 }
 
 .workspace-strip input {
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 0.92rem;
+  display: none;
 }
 
 .workspace-strip span {
-  overflow: hidden;
-  max-width: 360px;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   color: var(--muted);
   font-size: 0.82rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .messages {
@@ -310,7 +316,6 @@ button {
 
 .event {
   width: min(760px, 92%);
-  cursor: pointer;
 }
 
 .message.user {
@@ -358,8 +363,16 @@ button {
   pointer-events: none;
 }
 
+.event.can-collapse {
+  cursor: pointer;
+}
+
 .event.latest {
   cursor: default;
+}
+
+.event:not(.can-collapse) .event-toggle {
+  display: none;
 }
 
 .message-body pre,
@@ -370,6 +383,90 @@ button {
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 0.86rem;
   line-height: 1.5;
+}
+
+.markdown-body {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body table,
+.markdown-body pre {
+  margin: 0 0 0.8rem;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 0 0 0.65rem;
+  line-height: 1.2;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.35rem;
+}
+
+.markdown-body code {
+  padding: 0.1rem 0.28rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.markdown-body pre {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-body blockquote {
+  padding-left: 0.85rem;
+  border-left: 3px solid rgba(var(--glow-rgb), 0.35);
+  color: var(--muted);
+}
+
+.markdown-body a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  text-align: left;
+  vertical-align: top;
 }
 
 .message-images {
@@ -470,6 +567,9 @@ button {
 }
 
 .composer-wrap {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
   display: grid;
   gap: 8px;
 }
@@ -480,6 +580,8 @@ button {
   gap: 10px;
   border-radius: 26px;
   padding: 11px;
+  background: var(--panel-strong);
+  box-shadow: 0 14px 38px rgba(var(--glow-rgb), 0.15), 0 3px 10px rgba(0, 0, 0, 0.08);
 }
 
 .composer.dragover {

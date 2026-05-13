@@ -817,6 +817,7 @@ class MultiTurnReactAgent(BaseAgent):
         event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
         initial_content_parts: Optional[Sequence[dict[str, Any]]] = None,
         prior_messages: Optional[Sequence[dict[str, Any]]] = None,
+        interrupt_event: Optional[threading.Event] = None,
     ) -> dict:
         """Internal execution path with trace data for tests and debugging."""
         if not isinstance(prompt, str) or not prompt.strip():
@@ -920,10 +921,21 @@ class MultiTurnReactAgent(BaseAgent):
                 "session_state_path": str(self.session_state_path) if self.session_state_path else "",
             }
 
+        def interruption_requested() -> bool:
+            return bool(interrupt_event is not None and interrupt_event.is_set())
+
+        def finalize_interrupted() -> dict[str, Any]:
+            return finalize(
+                "Interrupted by user. Continue with a follow-up prompt to resume from the current context.",
+                "interrupted",
+                role="runtime",
+                error="user interrupt",
+            )
+
         if continuing_conversation:
             trace_writer.append(
                 role="runtime",
-                text=f"Continuing existing conversation with {len(messages) - 1} prior/current non-system messages.",
+                text="Continuing existing conversation with prior messages.",
                 turn_index=0,
             )
         else:
@@ -932,6 +944,8 @@ class MultiTurnReactAgent(BaseAgent):
         persist_state()
 
         while num_llm_calls_available > 0 and round_index < self.max_rounds:
+            if interruption_requested():
+                return finalize_interrupted()
             if remaining_runtime_seconds(runtime_deadline) is not None and remaining_runtime_seconds(runtime_deadline) <= 0:
                 result_text = "No result found before the maximum agent runtime limit."
                 termination = f"agent runtime limit reached: {agent_runtime_limit}s"
@@ -1019,10 +1033,17 @@ class MultiTurnReactAgent(BaseAgent):
                 result_text = "No result found before the maximum input token limit."
                 termination = f"input token limit reached: {current_token_estimate} > {max_input_tokens}"
                 return finalize(result_text, termination, error=termination)
+            if interruption_requested():
+                return finalize_interrupted()
             round_index += 1
             num_llm_calls_available -= 1
             llm_request_messages, image_aging = prepare_messages_for_llm(messages)
-            llm_reply = self.call_llm_api(llm_request_messages, runtime_deadline=runtime_deadline)
+            try:
+                llm_reply = self.call_llm_api(llm_request_messages, runtime_deadline=runtime_deadline)
+            except KeyboardInterrupt:
+                return finalize_interrupted()
+            if interruption_requested():
+                return finalize_interrupted()
             trace_writer.append(
                 role="runtime",
                 text="",
@@ -1157,6 +1178,7 @@ class MultiTurnReactAgent(BaseAgent):
                     reasoning_content=assistant_reasoning,
                     raw_message=assistant_raw_message,
                 )
+                tool_turn_message_start = len(messages)
                 messages.append(assistant_message)
                 deferred_image_contexts: list[tuple[str, str, Any, Any, dict[str, Any]]] = []
                 for tool_call, tool_arguments in zip(assistant_tool_calls, assistant_tool_arguments):
@@ -1167,12 +1189,16 @@ class MultiTurnReactAgent(BaseAgent):
                     tool_call_id = str(tool_call.get("id", ""))
                     function_block = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
                     tool_name = str(function_block.get("name", ""))
-                    result = self.custom_call_tool(
-                        tool_name,
-                        tool_arguments,
-                        workspace_root=resolved_workspace_root,
-                        runtime_deadline=runtime_deadline,
-                    )
+                    try:
+                        result = self.custom_call_tool(
+                            tool_name,
+                            tool_arguments,
+                            workspace_root=resolved_workspace_root,
+                            runtime_deadline=runtime_deadline,
+                        )
+                    except KeyboardInterrupt:
+                        messages = messages[:tool_turn_message_start]
+                        return finalize_interrupted()
                     tool_result_text = tool_result_message_content(result)
                     messages.append(api_tool_message(tool_call_id, result))
                     trace_writer.append(
@@ -1202,6 +1228,8 @@ class MultiTurnReactAgent(BaseAgent):
                         termination = f"agent runtime limit reached: {agent_runtime_limit}s"
                         return finalize(result_text, termination, error=termination)
                 persist_state()
+                if interruption_requested():
+                    return finalize_interrupted()
             elif assistant_has_meaningful_text(assistant_content):
                 current_result_text = assistant_text.strip()
                 messages.append(

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ResearchHarness Chat</title>
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=rocket-1" />
     <link rel="stylesheet" href="/static/app.css" />
   </head>
   <body>
@@ -23,9 +23,9 @@
         </div>
       </header>
 
-      <section class="workspace-strip">
-        <input id="workspaceInput" type="text" placeholder="Workspace folder path" autocomplete="off" />
-        <span id="runMeta">Choose an existing folder. The agent runs directly in it.</span>
+      <section id="workspaceStrip" class="workspace-strip">
+        <input id="workspaceInput" type="hidden" value="" />
+        <span id="workspaceMeta">Workspace not selected.</span>
       </section>
 
       <section id="timeline" class="messages">
@@ -40,7 +40,7 @@
         <div id="dropZone" class="composer">
           <button id="attachBtn" class="icon-button" type="button" title="Click + to add one or more images">+</button>
           <input id="imageInput" type="file" accept="image/*" multiple />
-          <textarea id="promptInput" rows="1" placeholder="Message ResearchHarness... Enter sends, Ctrl+Enter inserts a newline"></textarea>
+          <textarea id="promptInput" rows="1" placeholder="Message ResearchHarness"></textarea>
           <button id="runBtn" class="send-button" type="button">Run</button>
         </div>
         <p class="composer-hint">Enter sends. Ctrl+Enter or Shift+Enter inserts a newline. Click + to add one or more images; paste or drop images also works.</p>
@@ -68,6 +68,8 @@
         </footer>
       </div>
     </section>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

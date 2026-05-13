@@ -216,6 +216,7 @@ def _run_agent_thread(
             event_callback=bridge.trace_event,
             initial_content_parts=initial_content_parts or None,
             prior_messages=prior_messages,
+            interrupt_event=bridge.cancelled,
         )
         bridge.conversation_messages = result.get("messages", [])
         bridge.conversation_workspace_root = str(workspace_root)
@@ -403,6 +404,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 ok = bridge.submit_answer(str(message.get("request_id", "")), str(message.get("answer", "")))
                 if not ok:
                     bridge.send({"type": "run_error", "error": "No pending AskUser request matched that answer."})
+            elif message_type == "interrupt":
+                if run_thread is not None and run_thread.is_alive():
+                    bridge.cancelled.set()
+                    bridge.send({"type": "interrupt_requested"})
+                else:
+                    bridge.send({"type": "run_error", "error": "No active run is available to interrupt."})
             elif message_type == "new":
                 if run_thread is not None and run_thread.is_alive():
                     bridge.send({"type": "run_error", "error": "The current run is still active. Start a new conversation after it finishes."})

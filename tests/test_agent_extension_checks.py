@@ -2,6 +2,7 @@
 
 import json
 import sys
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -141,26 +142,105 @@ def main() -> int:
             )
             self.call_count = 0
             self.second_request_messages = []
+            self.third_request_messages = []
 
         def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
             self.call_count += 1
             if self.call_count == 2:
                 self.second_request_messages = msgs
+            elif self.call_count == 3:
+                self.third_request_messages = msgs
             return {
                 "status": "ok",
                 "finish_reason": "stop",
-                "content": "first answer" if self.call_count == 1 else "second answer",
+                "content": f"answer {self.call_count}",
                 "tool_calls": [],
             }
 
     continue_agent = ContinueAgent()
+    continue_workspace = TMP_DIR / "continue_workspace"
     first_turn = continue_agent._run_session("Remember this: alpha.", workspace_root=str(TMP_DIR / "continue_workspace"))
     second_turn = continue_agent._run_session(
         "What did I ask you to remember?",
-        workspace_root=str(TMP_DIR / "continue_workspace"),
+        workspace_root=str(continue_workspace),
         prior_messages=first_turn["messages"],
     )
     second_request_text = "\n".join(assistant_text_content(message.get("content")) for message in continue_agent.second_request_messages)
+    continue_image_source = TMP_DIR / "continue_image.png"
+    continue_image_source.write_bytes(b"fake continue image bytes")
+    continue_saved_path, continue_data_url = stage_image_file_for_input(
+        continue_image_source,
+        workspace_root=continue_workspace,
+        image_index=0,
+    )
+    continue_image_parts = image_input_content_parts(continue_data_url, continue_saved_path)
+    continue_image_prompt = append_saved_image_paths_to_prompt("Inspect this follow-up image.", [continue_saved_path])
+    third_turn = continue_agent._run_session(
+        continue_image_prompt,
+        workspace_root=str(continue_workspace),
+        prior_messages=second_turn["messages"],
+        initial_content_parts=continue_image_parts,
+    )
+    third_request_text = "\n".join(assistant_text_content(message.get("content")) for message in continue_agent.third_request_messages)
+    third_request_has_image = any(
+        isinstance(message.get("content"), list)
+        and any(isinstance(part, dict) and part.get("type") == "image_url" for part in message.get("content", []))
+        for message in continue_agent.third_request_messages
+    )
+    third_trace_rows = load_trace_records(Path(third_turn["trace_path"]))
+    continuation_runtime_text = "\n".join(
+        str(row.get("text", "")) for row in third_trace_rows if row.get("role") == "runtime"
+    )
+
+    class InterruptAgent(MultiTurnReactAgent):
+        def __init__(self, interrupt_event: threading.Event):
+            super().__init__(
+                function_list=[],
+                llm={
+                    "model": "fake-model",
+                    "generate_cfg": {
+                        "max_input_tokens": 10000,
+                        "max_retries": 1,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                        "presence_penalty": 0.0,
+                    },
+                },
+                trace_dir=str(trace_dir),
+            )
+            self.call_count = 0
+            self.interrupt_event = interrupt_event
+
+        def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
+            self.call_count += 1
+            if self.call_count == 1:
+                self.interrupt_event.set()
+                return {
+                    "status": "ok",
+                    "finish_reason": "stop",
+                    "content": "late answer should be discarded",
+                    "tool_calls": [],
+                }
+            return {
+                "status": "ok",
+                "finish_reason": "stop",
+                "content": "continued after interrupt",
+                "tool_calls": [],
+            }
+
+    interrupt_event = threading.Event()
+    interrupt_agent = InterruptAgent(interrupt_event)
+    interrupt_session = interrupt_agent._run_session(
+        "Start a long task.",
+        workspace_root=str(TMP_DIR / "interrupt_workspace"),
+        interrupt_event=interrupt_event,
+    )
+    interrupt_followup = interrupt_agent._run_session(
+        "Continue after the interruption.",
+        workspace_root=str(TMP_DIR / "interrupt_workspace"),
+        prior_messages=interrupt_session["messages"],
+    )
+    interrupt_message_text = "\n".join(assistant_text_content(message.get("content")) for message in interrupt_session["messages"])
 
     cli_image_source = TMP_DIR / "source_image.png"
     cli_image_source.write_bytes(b"fake png bytes")
@@ -219,6 +299,11 @@ def main() -> int:
                 "system_prompt_tail": system_message[-300:],
                 "qa_prompt_mentions_synchronous": "synchronous" in qa_prompt_text.lower(),
                 "continued_result": second_turn.get("result_text"),
+                "continued_image_result": third_turn.get("result_text"),
+                "continued_image_saved_path": continue_saved_path,
+                "continuation_runtime_text": continuation_runtime_text,
+                "interrupt_termination": interrupt_session.get("termination"),
+                "interrupt_followup": interrupt_followup.get("result_text"),
             },
             ensure_ascii=False,
             indent=2,
@@ -243,9 +328,19 @@ def main() -> int:
         and "AskUser" in AVAILABLE_TOOL_MAP
         and "AskUser" not in rcb_agent.tool_names
         and "AskUser" in rcb_forbidden_error
-        and second_turn.get("result_text") == "second answer"
-        and "first answer" in second_request_text
+        and second_turn.get("result_text") == "answer 2"
+        and "answer 1" in second_request_text
         and "What did I ask you to remember?" in second_request_text
+        and third_turn.get("result_text") == "answer 3"
+        and third_request_has_image
+        and continue_saved_path in third_request_text
+        and "Continuing existing conversation with prior messages." in continuation_runtime_text
+        and "prior/current non-system messages" not in continuation_runtime_text
+        and interrupt_session.get("termination") == "interrupted"
+        and "Interrupted by user" in interrupt_session.get("result_text", "")
+        and "Start a long task." in interrupt_message_text
+        and "late answer should be discarded" not in interrupt_message_text
+        and interrupt_followup.get("result_text") == "continued after interrupt"
         and cli_saved_path.startswith("inputs/images/")
         and cli_second_saved_path.startswith("inputs/images/")
         and (cli_workspace / cli_saved_path).exists()

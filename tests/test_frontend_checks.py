@@ -112,8 +112,15 @@ def test_frontend_static_interaction_contract() -> None:
     server = (ROOT / "frontend" / "local_server.py").read_text(encoding="utf-8")
 
     assert "Ctrl+Enter" in html
-    assert "Ctrl+Enter inserts a newline" in html
+    assert "Ctrl+Enter or Shift+Enter inserts a newline" in html
     assert "Click + to add one or more images" in html
+    assert '/static/favicon.svg?v=rocket-1' in html
+    assert 'placeholder="Message ResearchHarness"' in html
+    assert "Message ResearchHarness... Enter sends" not in html
+    assert 'id="workspaceStrip"' in html
+    assert 'id="workspaceInput" type="hidden"' in html
+    assert "Workspace not selected." in html
+    assert "Workspace folder path" not in html
     assert "--role-prompt-file" in launcher
     assert "--trace-dir" in launcher
     assert "configure_frontend" in launcher
@@ -122,35 +129,66 @@ def test_frontend_static_interaction_contract() -> None:
     assert "prior_messages=prior_messages" in server
     assert "conversation_messages" in server
     assert "No active conversation is available on the server" in server
+    assert 'message_type == "interrupt"' in server
+    assert "interrupt_requested" in server
+    assert "interrupt_event=bridge.cancelled" in server
     assert "/api/workspace-directories" in js
     assert "autoFollowTimeline" in js
     assert "syncTimelineFollowMode" in js
+    assert "setWorkspaceSelected" in js
+    assert "Workspace selected: " in js
+    assert "Connection closed. Refresh to reconnect." not in js
+    assert "Starting agent run" not in js
+    assert "Finished: " not in js
     assert "conversationStarted" in js
     assert "continue_conversation" in js
-    assert "Type a follow-up or click New chat" in js
     assert "setEventExpanded" in js
+    assert "refreshEventCollapseCapability" in js
+    assert "can-collapse" in js
+    assert "COLLAPSED_STEP_HEIGHT + 8" in js
     assert "body.scrollHeight" in js
     assert "keepSubmittedMessageOnReset" in js
     assert "setEventExpanded(eventNode, false, true)" in js
     assert "sendAskUserAnswer" in js
     assert "Agent question" in js
     assert 'runBtn.textContent = "Reply"' in js
+    assert '"Stop"' in js
+    assert "sendInterrupt" in js
+    assert "Interrupting" in js
     assert 'addMessage("user", answer, [])' in js
+    assert "function renderMarkdown(text)" in js
+    assert "window.marked.parse" in js
+    assert "window.DOMPurify.sanitize" in js
+    assert '!tools.length && row.termination === "result"' in js
+    assert '"Message ResearchHarness"' in js
+    assert "Answer the agent question here" not in js
     assert "askForm" not in js
     assert "askAnswer" not in js
     assert "askPanel" not in html
+    assert "marked@15.0.12/marked.min.js" in html
+    assert "dompurify@3.2.6/dist/purify.min.js" in html
     assert 'eventNode.classList.add("collapsed")' not in js
     assert 'node.classList.contains("latest")' in js
     assert "event.isComposing" in js
     assert ".rh_frontend_inputs" not in server
     assert "send-button.is-running" in css
+    assert "0 14px 38px rgba(var(--glow-rgb), 0.15)" in css
+    assert "position: sticky" in css
+    assert "top: 66px" in css
+    assert "z-index: 4" in css
     assert "height: 100dvh" in css
     assert ".chat-shell > *" in css
+    assert "overflow-wrap: anywhere" in css
+    assert "word-break: break-word" in css
     assert "flex: 0 0 auto" in css
     assert "overflow-y: scroll" in css
     assert "max-height: 100%" in css
     assert "transition: max-height" in css
     assert "event-body-inner" in css
+    assert ".markdown-body" in css
+    assert ".markdown-body table" in css
+    assert ".event.can-collapse" in css
+    assert ".event:not(.can-collapse) .event-toggle" in css
     assert "ask-card" not in css
     assert ".event-body {\n  display: grid" not in css
     assert ".event.collapsed .event-body {\n  grid-template-rows" not in css

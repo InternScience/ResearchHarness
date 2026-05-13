@@ -123,6 +123,7 @@
 (function () {
   var ws;
   var running = false;
+  var interrupting = false;
   var pendingAskId = "";
   var keepSubmittedMessageOnReset = false;
   var autoFollowTimeline = true;
@@ -131,6 +132,7 @@
   var COLLAPSED_STEP_HEIGHT = 220;
 
   var workspaceInput = document.getElementById("workspaceInput");
+  var workspaceStrip = document.getElementById("workspaceStrip");
   var promptInput = document.getElementById("promptInput");
   var runBtn = document.getElementById("runBtn");
   var newBtn = document.getElementById("newBtn");
@@ -141,7 +143,7 @@
   var dropZone = document.getElementById("dropZone");
   var timeline = document.getElementById("timeline");
   var statusPill = document.getElementById("statusPill");
-  var runMeta = document.getElementById("runMeta");
+  var workspaceMeta = document.getElementById("workspaceMeta");
   var workspaceModal = document.getElementById("workspaceModal");
   var workspaceCloseBtn = document.getElementById("workspaceCloseBtn");
   var workspacePathInput = document.getElementById("workspacePathInput");
@@ -151,7 +153,7 @@
   var workspaceUseBtn = document.getElementById("workspaceUseBtn");
   var workspacePickerHint = document.getElementById("workspacePickerHint");
   var currentWorkspacePath = "";
-  var defaultPromptPlaceholder = promptInput.getAttribute("placeholder") || "Message ResearchHarness...";
+  var defaultPromptPlaceholder = promptInput.getAttribute("placeholder") || "Message ResearchHarness";
 
   function escapeHtml(value) {
     return String(value || "")
@@ -162,9 +164,29 @@
       .replaceAll("'", "&#039;");
   }
 
+  function renderMarkdown(text) {
+    if (!window.marked || !window.DOMPurify) {
+      console.warn("Markdown renderer unavailable; falling back to plain text.");
+      return "<pre>" + escapeHtml(text) + "</pre>";
+    }
+    try {
+      var rawHtml = window.marked.parse(String(text || ""), { gfm: true, breaks: false, async: false });
+      var safeHtml = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+      return '<div class="markdown-body">' + safeHtml + "</div>";
+    } catch (e) {
+      console.warn("Markdown rendering failed; falling back to plain text.", e);
+      return "<pre>" + escapeHtml(text) + "</pre>";
+    }
+  }
+
   function setStatus(text, kind) {
     statusPill.textContent = text;
     statusPill.className = "status " + (kind || "idle");
+  }
+
+  function setWorkspaceSelected(path) {
+    workspaceInput.value = path;
+    workspaceMeta.textContent = "Workspace selected: " + path;
   }
 
   function updateComposerMode() {
@@ -172,17 +194,18 @@
       runBtn.disabled = false;
       runBtn.classList.remove("is-running");
       runBtn.textContent = "Reply";
-      promptInput.placeholder = "Answer the agent question here... Enter replies, Ctrl+Enter inserts a newline";
+      promptInput.placeholder = defaultPromptPlaceholder;
       return;
     }
-    runBtn.disabled = running;
+    runBtn.disabled = running && interrupting;
     runBtn.classList.toggle("is-running", running);
-    runBtn.textContent = running ? "Running" : "Run";
+    runBtn.textContent = running ? (interrupting ? "Stopping" : "Stop") : "Run";
     promptInput.placeholder = defaultPromptPlaceholder;
   }
 
   function setRunning(active, statusText) {
     running = active;
+    if (!active) interrupting = false;
     updateComposerMode();
     setStatus(statusText || (active ? "Running" : "Idle"), active ? "running" : "idle");
   }
@@ -230,6 +253,24 @@
     return node.querySelector(".event-body");
   }
 
+  function eventCanCollapse(node) {
+    return node.classList.contains("can-collapse");
+  }
+
+  function refreshEventCollapseCapability(node) {
+    var body = eventBody(node);
+    var toggle = node.querySelector(".event-toggle");
+    if (!body) return;
+    var shouldCollapse = body.scrollHeight > COLLAPSED_STEP_HEIGHT + 8;
+    node.classList.toggle("can-collapse", shouldCollapse);
+    if (toggle) toggle.hidden = !shouldCollapse;
+    if (!shouldCollapse) {
+      node.classList.remove("collapsed");
+      body.style.maxHeight = "none";
+    }
+    updateEventToggle(node);
+  }
+
   function setEventExpanded(node, expanded, animate) {
     var body = eventBody(node);
     if (!body) {
@@ -237,6 +278,8 @@
       updateEventToggle(node);
       return;
     }
+    refreshEventCollapseCapability(node);
+    if (!eventCanCollapse(node)) return;
 
     if (expanded) {
       node.classList.remove("collapsed");
@@ -264,7 +307,7 @@
   }
 
   function toggleEvent(node) {
-    if (node.classList.contains("latest")) return;
+    if (node.classList.contains("latest") || !eventCanCollapse(node)) return;
     setEventExpanded(node, node.classList.contains("collapsed"), true);
   }
 
@@ -294,7 +337,6 @@
     node.addEventListener("click", function () {
       toggleEvent(node);
     });
-    updateEventToggle(node);
     timeline.appendChild(node);
     setEventExpanded(node, true, false);
     scrollTimeline(shouldFollow);
@@ -337,7 +379,11 @@
       var tools = Array.isArray(row.tool_names) ? row.tool_names : [];
       var args = Array.isArray(row.tool_arguments) ? row.tool_arguments : [];
       var body = "";
-      if (text.trim()) body += "<pre>" + escapeHtml(text) + "</pre>";
+      if (text.trim()) {
+        body += (!tools.length && row.termination === "result")
+          ? renderMarkdown(text)
+          : "<pre>" + escapeHtml(text) + "</pre>";
+      }
       if (tools.length) {
         body += '<div class="tool-grid">';
         tools.forEach(function (name, idx) {
@@ -383,12 +429,11 @@
       clearAskRequest();
       setRunning(false, "Disconnected");
       setStatus("Disconnected", "error");
-      runMeta.textContent = "Connection closed. Refresh to reconnect.";
     };
     ws.onmessage = function (event) {
       var message = JSON.parse(event.data);
       if (message.type === "ready") {
-        runMeta.textContent = "Ready.";
+        setStatus("Connected", "idle");
       } else if (message.type === "conversation_reset") {
         if (keepSubmittedMessageOnReset) {
           keepSubmittedMessageOnReset = false;
@@ -402,7 +447,10 @@
         addEvent("runtime", "Uploaded images saved", "<pre>" + escapeHtml((message.paths || []).join("\n")) + "</pre>", []);
       } else if (message.type === "run_started") {
         setRunning(true, "Running");
-        runMeta.textContent = "Model " + message.model + " in " + message.workspace_root;
+      } else if (message.type === "interrupt_requested") {
+        interrupting = true;
+        updateComposerMode();
+        setStatus("Interrupting", "running");
       } else if (message.type === "trace") {
         renderTrace(message.row);
       } else if (message.type === "ask_user") {
@@ -412,7 +460,6 @@
         setRunning(false, "Done");
         clearAskRequest();
         setStatus("Done", "done");
-        runMeta.textContent = "Finished: " + (message.termination || "result") + ". Type a follow-up or click New chat.";
       } else if (message.type === "run_error") {
         keepSubmittedMessageOnReset = false;
         clearAskRequest();
@@ -445,9 +492,12 @@
       sendAskUserAnswer();
       return;
     }
-    if (running) return;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setStatus("Disconnected", "error");
+      return;
+    }
+    if (running) {
+      sendInterrupt();
       return;
     }
     var prompt = promptInput.value.trim();
@@ -458,7 +508,6 @@
     addMessage("user", prompt, sentImages);
     keepSubmittedMessageOnReset = !continueConversation;
     setRunning(true, "Starting");
-    runMeta.textContent = continueConversation ? "Continuing agent conversation..." : "Starting agent run...";
     ws.send(JSON.stringify({
       type: "start",
       prompt: prompt,
@@ -470,6 +519,14 @@
     promptInput.style.height = "auto";
     images = [];
     renderImages();
+  }
+
+  function sendInterrupt() {
+    if (!running || interrupting || !ws || ws.readyState !== WebSocket.OPEN) return;
+    interrupting = true;
+    updateComposerMode();
+    setStatus("Interrupting", "running");
+    ws.send(JSON.stringify({ type: "interrupt" }));
   }
 
   function sendAskUserAnswer() {
@@ -625,7 +682,6 @@
       clearTimeline();
       clearAskRequest();
       conversationStarted = false;
-      runMeta.textContent = "New conversation.";
       setRunning(false, "Idle");
     }
   });
@@ -653,8 +709,7 @@
   });
   workspaceUseBtn.addEventListener("click", function () {
     if (!currentWorkspacePath) return;
-    workspaceInput.value = currentWorkspacePath;
-    runMeta.textContent = "Workspace selected: " + currentWorkspacePath;
+    setWorkspaceSelected(currentWorkspacePath);
     closeWorkspaceModal();
   });
 

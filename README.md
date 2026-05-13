@@ -75,7 +75,7 @@ If you are new to the project, the recommended reading order is:
 ## 📰 News
 
 - **2026-05-13: Local browser frontend and conversational CLI**
-  ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, handles `AskUser` replies through the same chat input box, and lets users continue after a final answer without losing prior context. Interactive CLI runs can also continue with follow-up prompts; API deployment remains intentionally one request -> one answer.
+  ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, handles `AskUser` replies through the same chat input box, and lets users continue after a final answer without losing prior context. Frontend runs can be interrupted with **Stop** and resumed from the preserved context; interactive CLI runs can use `Ctrl+C` to interrupt the current run and continue chatting. API deployment remains intentionally one request -> one answer.
 - **2026-05-12: OpenAI-compatible API server**
   ResearchHarness can now be deployed as a synchronous `/v1/chat/completions` service. Existing OpenAI SDK clients can send plain-text or multimodal requests, while the server creates an isolated workspace per request and uses input/output LLM wrappers to keep agent execution stable and final answers format-compliant.
 - **2026-04-30: Interactive `AskUser` tool**
@@ -416,7 +416,9 @@ recover images with `ReadImage`.
 In an interactive terminal, the CLI stays open after the final answer and asks
 for a follow-up prompt. The next run keeps the previous message history,
 including tool results and saved image path hints, so the agent can continue the
-same conversation. Press `Ctrl+C` or send EOF to exit. Use `--no-chat` when a
+same conversation. During a running step, `Ctrl+C` interrupts the current run at
+the next safe point and returns to follow-up mode with context preserved. Press
+`Ctrl+C` at the follow-up prompt or send EOF to exit. Use `--no-chat` when a
 script or benchmark needs strict one-shot behavior.
 
 The CLI is not limited to a final one-line answer. During execution it prints a
@@ -465,7 +467,9 @@ tool results over WebSocket, supports `AskUser` replies through the same chat
 input box, and accepts image attachments by file picker, drag-and-drop, or paste.
 After a run finishes, typing another message continues the same conversation
 with prior messages preserved. Click **New chat** to clear the current
-conversation and start over.
+conversation and start over. During a running step, the send button becomes
+**Stop**; stopping is cooperative and preserves context for the next message
+once the current model or tool call reaches a safe stop point.
 
 The workspace picker is an in-page directory browser backed by the local server,
 not a native OS dialog. It supports Unicode paths, including Chinese folder

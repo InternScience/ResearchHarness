@@ -119,13 +119,15 @@ python3 run_agent.py "Read the image and return JSON." \
 用户文本，让后续轮次可以用 `ReadImage` 重新读取这些图片。
 
 在交互式终端中，CLI 会在最终回答后继续等待 follow-up。下一轮会保留之前的
-messages、工具结果和图片保存路径提示。按 `Ctrl+C` 或发送 EOF 可退出。脚本或
-benchmark 如果需要严格的一问一答行为，使用 `--no-chat`；需要强制开启时使用
-`--chat`。
+messages、工具结果和图片保存路径提示。运行过程中按 `Ctrl+C` 会在下一个安全点
+中断当前 run，并带着上下文回到 follow-up 模式。在 follow-up 输入处按 `Ctrl+C`
+或发送 EOF 可退出。脚本或 benchmark 如果需要严格的一问一答行为，使用
+`--no-chat`；需要强制开启时使用 `--chat`。
 
 如果需要浏览器本地界面，运行 `python3 run_frontend.py`。前端使用页面中选择的
 已有 workspace，实时显示工具步骤，支持一张或多张图片附件，并在每次最终回答后
-继续当前对话，直到点击 **New chat**。
+继续当前对话，直到点击 **New chat**。运行中发送按钮会变成 **Stop**；它会在下一个
+安全点中断，并保留上下文用于下一条消息。
 
 ### CLI 参数
 

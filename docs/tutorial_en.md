@@ -125,13 +125,17 @@ path to the user text so later rounds can call `ReadImage` on the same files.
 
 In an interactive terminal, CLI runs continue after a final answer and prompt
 for a follow-up. The follow-up run keeps the prior messages, tool results, and
-saved image path hints. Press `Ctrl+C` or send EOF to exit. Use `--no-chat` for
+saved image path hints. During a running step, `Ctrl+C` interrupts the current
+run at the next safe point and returns to follow-up mode with context preserved.
+Press `Ctrl+C` at the follow-up prompt or send EOF to exit. Use `--no-chat` for
 strict one-shot behavior, or `--chat` to force follow-up mode.
 
 For browser-based local use, run `python3 run_frontend.py`. The frontend uses an
 existing workspace selected in the page, streams tool steps live, accepts one or
 more image attachments, and continues the current conversation after each final
-answer until you click **New chat**.
+answer until you click **New chat**. While running, the send button becomes
+**Stop**; it interrupts at the next safe point and keeps the conversation
+context for the next message.
 
 ### CLI Parameters
 
