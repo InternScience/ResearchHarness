@@ -33,6 +33,8 @@ and easy to trust as infrastructure.
 
 🚀 **Try it online now:** [ResearchHarness Online Chat](https://huggingface.co/spaces/CoCoOne/ResearchHarness)
 
+📮 **Contact:** [xu_wanghan@sjtu.edu.cn](https://black-yt.github.io/)
+
 ## 🎞️ Demo
 
 * **Task**: `Help me research the latest work in auto research and create a visually appealing HTML document to introduce this work. Create an index.html file.`
