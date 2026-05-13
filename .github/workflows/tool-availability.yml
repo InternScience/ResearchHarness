@@ -58,11 +58,7 @@ jobs:
           PY
 
       - name: Run full tool availability check
-        env:
-          HTTP_PROXY: ""
-          HTTPS_PROXY: ""
-          ALL_PROXY: ""
-          http_proxy: ""
-          https_proxy: ""
-          all_proxy: ""
-        run: python tests/test_tool_availability.py
+        run: |
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+              -u http_proxy -u https_proxy -u all_proxy \
+              python tests/test_tool_availability.py
