@@ -85,6 +85,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+- **2026-05-13: Frontend math rendering**
+  The local browser frontend and hosted Space now render common LaTeX math delimiters in final assistant Markdown answers, including `$$...$$`, `\(...\)`, and `\[...\]`, while leaving tool outputs and runtime logs unchanged.
 - **2026-05-13: Local browser frontend and conversational CLI**
   ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, handles `AskUser` replies through the same chat input box, and lets users continue after a final answer without losing prior context. Frontend runs can be interrupted with **Stop** and resumed from the preserved context; interactive CLI runs can use `Ctrl+C` to interrupt the current run and continue chatting. CLI step output now uses compact colored boxes for assistant/tool/runtime events. API deployment remains intentionally one request -> one answer.
 - **2026-05-12: OpenAI-compatible API server**

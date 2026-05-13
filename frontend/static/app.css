@@ -390,6 +390,17 @@ button {
   word-break: break-word;
 }
 
+.markdown-body .katex {
+  font-size: 1.02em;
+}
+
+.markdown-body .katex-display {
+  margin: 0.85rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.1rem;
+}
+
 .markdown-body > *:first-child {
   margin-top: 0;
 }

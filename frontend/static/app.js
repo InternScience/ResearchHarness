@@ -164,14 +164,53 @@
       .replaceAll("'", "&#039;");
   }
 
+  function protectMathSegments(text) {
+    var segments = [];
+    var protectedText = String(text || "").replace(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\))/g, function (match) {
+      var token = "@@RH_MATH_" + segments.length + "@@";
+      segments.push({ token: token, text: match });
+      return token;
+    });
+    return { text: protectedText, segments: segments };
+  }
+
+  function restoreMathSegments(html, segments) {
+    var restored = String(html || "");
+    (segments || []).forEach(function (segment) {
+      restored = restored.split(segment.token).join(escapeHtml(segment.text));
+    });
+    return restored;
+  }
+
+  function renderMathInMarkdown(container) {
+    if (!window.renderMathInElement) return;
+    container.querySelectorAll(".markdown-body").forEach(function (body) {
+      try {
+        window.renderMathInElement(body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\[", right: "\\]", display: true },
+            { left: "\\(", right: "\\)", display: false }
+          ],
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false
+        });
+      } catch (e) {
+        console.warn("Math rendering failed.", e);
+      }
+    });
+  }
+
   function renderMarkdown(text) {
     if (!window.marked || !window.DOMPurify) {
       console.warn("Markdown renderer unavailable; falling back to plain text.");
       return "<pre>" + escapeHtml(text) + "</pre>";
     }
     try {
-      var rawHtml = window.marked.parse(String(text || ""), { gfm: true, breaks: false, async: false });
+      var protectedMath = protectMathSegments(text);
+      var rawHtml = window.marked.parse(protectedMath.text, { gfm: true, breaks: false, async: false });
       var safeHtml = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+      safeHtml = restoreMathSegments(safeHtml, protectedMath.segments);
       return '<div class="markdown-body">' + safeHtml + "</div>";
     } catch (e) {
       console.warn("Markdown rendering failed; falling back to plain text.", e);
@@ -338,6 +377,7 @@
       toggleEvent(node);
     });
     timeline.appendChild(node);
+    renderMathInMarkdown(node);
     setEventExpanded(node, true, false);
     scrollTimeline(shouldFollow);
   }
