@@ -622,11 +622,17 @@ By default, each API request uses its own isolated `agent_workspace/` under
 absolute path to an existing directory:
 
 ```python
+from openai import OpenAI
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
 response = client.chat.completions.create(
     model="RH",
-    messages=[{"role": "user", "content": "Inspect this workspace and summarize it."}],
+    messages=[{"role": "user", "content": "Inspect this workspace and summarize it. Write the summary to summary.md in this folder."}],
     extra_body={"workspace-root": "/abs/path/to/my/workspace"},
 )
+
+print(response.choices[0].message.content)
 ```
 
 If `workspace-root` is provided and points to an existing directory, the agent

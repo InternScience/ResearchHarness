@@ -37,11 +37,17 @@ Benchmark runners may pass `workspace-root` in the OpenAI request body when a
 case should run inside an already prepared workspace:
 
 ```python
+from openai import OpenAI
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
 response = client.chat.completions.create(
     model="RH",
     messages=[{"role": "user", "content": "Answer the question."}],
     extra_body={"workspace-root": "/abs/path/to/existing/workspace"},
 )
+
+print(response.choices[0].message.content)
 ```
 
 If `workspace-root` is absent, relative, or not an existing directory, RH falls
