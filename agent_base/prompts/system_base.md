@@ -168,6 +168,7 @@ PY
   - fetch the chosen page with `WebFetch`
   - only then produce the final result
 - Do not treat `WebSearch` or `ScholarSearch` snippets as a substitute for `WebFetch` when page verification is required.
+- `WebFetch` returns cleaned page text with line and truncation metadata. If the response is truncated or the needed evidence is outside the returned range, call `WebFetch` again with a narrower `start_line` / `end_line` range instead of repeating the same request.
 - The `visited_url` in the final result should be a URL that was actually passed to `WebFetch`.
 
 ## Terminal Workflow

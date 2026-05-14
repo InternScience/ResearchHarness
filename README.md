@@ -85,8 +85,10 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+- **2026-05-14: WebFetch is now deterministic fetch-only**
+  `WebFetch` no longer performs a hidden LLM summarization pass. It now uses a URL-only interface plus optional `start_line`, `end_line`, and `max_chars` controls. It returns cleaned, range-bounded webpage text with line and truncation metadata, so the main agent can inspect the evidence directly and request narrower ranges when needed.
 - **2026-05-14: Per-request and per-run model routing**
-  The OpenAI-compatible API now accepts `model="RH"` for the default backend model and `model="RH--<llm-model-name>"` for a request-local override. The selected backend model is used consistently by the input wrapper, agent loop, compaction, `WebFetch`, and output wrapper without mutating global environment variables. The local frontend and hosted Space also expose a per-run model dropdown.
+  The OpenAI-compatible API now accepts `model="RH"` for the default backend model and `model="RH--<llm-model-name>"` for a request-local override. The selected backend model is used consistently by the input wrapper, agent loop, compaction, and output wrapper without mutating global environment variables. The local frontend and hosted Space also expose a per-run model dropdown.
 - **2026-05-13: Frontend math rendering**
   The local browser frontend and hosted Space now render common LaTeX math delimiters in final assistant Markdown answers, including `$$...$$`, `\(...\)`, and `\[...\]`, while leaving tool outputs and runtime logs unchanged.
 - **2026-05-13: Local browser frontend and conversational CLI**
@@ -295,6 +297,8 @@ Optional variables:
 - `MAX_AGENT_ROUNDS`
 - `MAX_AGENT_RUNTIME_SECONDS`
 - `LLM_TIMEOUT_SECONDS`
+- `WEBFETCH_TIMEOUT_SECONDS`
+- `WEBFETCH_MAX_CHARS`
 - `LLM_MAX_OUTPUT_TOKENS`
 - `MAX_INPUT_TOKENS`
 - `LLM_MAX_RETRIES`
@@ -605,8 +609,8 @@ two-hyphen prefix form `RH--<llm-model-name>`, for example `RH--gpt-5.5` or
 
 Direct model names such as `gpt-5.5` are rejected. The override is local to that
 API request; it does not mutate environment variables and does not affect other
-concurrent requests. The agent run, input wrapper, output wrapper, compaction,
-and `WebFetch` summary calls all use the same selected backend model.
+concurrent requests. The agent run, input wrapper, output wrapper, and
+compaction all use the same selected backend model.
 
 ### Text Request
 

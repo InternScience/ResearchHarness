@@ -107,18 +107,16 @@ def test_visit() -> ToolTestResult:
         tool.call,
         {
             "url": [DEFAULT_VISIT_URL],
-            "goal": "Find the authors of the paper and the publication year.",
         },
     )
     text = str(result)
     bad_markers = [
         "[WebFetch] Failed to read page.",
-        "The webpage content could not be processed",
         "The provided webpage content could not be accessed",
     ]
-    if "Evidence in page:" not in text or "Summary:" not in text or any(marker in text for marker in bad_markers):
-        return make_result("WebFetch", "FAIL", started_at, "WebFetch did not return a usable summary.", text, stdout, stderr)
-    return make_result("WebFetch", "PASS", started_at, "WebFetch returned webpage evidence and summary.", text, stdout, stderr)
+    if "source_type: web" not in text or "content:" not in text or any(marker in text for marker in bad_markers):
+        return make_result("WebFetch", "FAIL", started_at, "WebFetch did not return usable webpage content.", text, stdout, stderr)
+    return make_result("WebFetch", "PASS", started_at, "WebFetch returned webpage content.", text, stdout, stderr)
 
 
 def test_read() -> ToolTestResult:

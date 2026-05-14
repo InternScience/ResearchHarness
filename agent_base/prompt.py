@@ -21,11 +21,6 @@ PROMPT_ASSETS = {
         path=PROMPTS_DIR / "system_base.md",
         description="Base general-purpose system prompt for the harness.",
     ),
-    "extractor": PromptAsset(
-        name="extractor",
-        path=PROMPTS_DIR / "extractor.md",
-        description="Goal-directed webpage extraction prompt used by WebFetch.",
-    ),
 }
 
 
@@ -34,7 +29,6 @@ def _read_prompt_asset(asset: PromptAsset) -> str:
 
 
 SYSTEM_PROMPT = _read_prompt_asset(PROMPT_ASSETS["system_base"])
-EXTRACTOR_PROMPT = _read_prompt_asset(PROMPT_ASSETS["extractor"])
 
 
 def _normalize_extra_blocks(blocks: Iterable[str] | None) -> list[str]:
@@ -65,7 +59,6 @@ def _show_asset(name: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Inspect prompt assets.")
     parser.add_argument("--show-system", action="store_true", help="Print the composed system prompt.")
-    parser.add_argument("--show-extractor", action="store_true", help="Print the extractor prompt.")
     parser.add_argument("--show-asset", metavar="NAME", help="Print one prompt asset by name.")
     parser.add_argument("--list-assets", action="store_true", help="List registered prompt assets.")
     parser.add_argument(
@@ -92,13 +85,8 @@ def main(argv: list[str] | None = None) -> int:
         print(composed_system_prompt(current_date="<DATE>", extra_blocks=extra_blocks))
         return 0
 
-    if args.show_extractor:
-        print(EXTRACTOR_PROMPT)
-        return 0
-
     print(f"prompt_asset_dir={PROMPTS_DIR}")
     print(f"system_prompt_chars={len(composed_system_prompt(current_date='<DATE>', extra_blocks=extra_blocks))}")
-    print(f"extractor_prompt_chars={len(EXTRACTOR_PROMPT)}")
     return 0
 
 

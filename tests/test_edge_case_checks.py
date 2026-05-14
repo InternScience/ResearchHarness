@@ -1694,76 +1694,96 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
     return ok, detail
 
 
-def check_claude_models_skip_sampling_params_in_webfetch_summary() -> tuple[bool, str]:
+def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tuple[bool, str]:
     from agent_base.tools.tool_web import WebFetch
 
-    class FakeMessage:
-        content = "summary"
+    old_timeout = os.environ.get("WEBFETCH_TIMEOUT_SECONDS")
+    old_max_chars = os.environ.get("WEBFETCH_MAX_CHARS")
+    try:
+        os.environ["WEBFETCH_TIMEOUT_SECONDS"] = "30"
+        os.environ["WEBFETCH_MAX_CHARS"] = "20"
+        fetch = WebFetch()
+        fetched_urls: list[str] = []
 
-    class FakeClient:
-        def __init__(self):
-            self.request_kwargs = None
-            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self.create))
+        def fake_readpage(url, runtime_deadline=None):
+            fetched_urls.append(url)
+            return "\n".join(["line 1 alpha", "line 2 beta", "line 3 gamma", "line 4 delta"])
 
-        def with_options(self, **kwargs):
-            return self
-
-        def create(self, **kwargs):
-            self.request_kwargs = kwargs
-            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=FakeMessage())])
-
-    claude_fetch = WebFetch()
-    claude_fetch._summary_client = FakeClient()
-    claude_fetch._summary_api_base = "http://fake"
-    claude_fetch._summary_model_name = "anthropic/claude-3-5-sonnet"
-    claude_fetch._summary_temperature = 0.3
-    claude_fetch._summary_top_p = 0.8
-    claude_fetch._summary_presence_penalty = 0.2
-    claude_result = claude_fetch.call_server([{"role": "user", "content": "Summarize"}], max_retries=1)
-
-    gpt_fetch = WebFetch()
-    gpt_fetch._summary_client = FakeClient()
-    gpt_fetch._summary_api_base = "http://fake"
-    gpt_fetch._summary_model_name = "gpt-5.4"
-    gpt_fetch._summary_temperature = 0.3
-    gpt_fetch._summary_top_p = 0.8
-    gpt_fetch._summary_presence_penalty = 0.2
-    gpt_result = gpt_fetch.call_server([{"role": "user", "content": "Summarize"}], max_retries=1)
-
-    gpt55_fetch = WebFetch()
-    gpt55_fetch._summary_client = FakeClient()
-    gpt55_fetch._summary_api_base = "http://fake"
-    gpt55_fetch._summary_model_name = "openai/gpt-5.5-20260501"
-    gpt55_fetch._summary_temperature = 0.3
-    gpt55_fetch._summary_top_p = 0.8
-    gpt55_fetch._summary_presence_penalty = 0.2
-    gpt55_result = gpt55_fetch.call_server([{"role": "user", "content": "Summarize"}], max_retries=1)
+        fetch.html_readpage_jina = fake_readpage
+        result = fetch.call(
+            {
+                "url": "https://example.com",
+                "start_line": 2,
+                "end_line": 4,
+            },
+            model_name="claude-opus-4-7",
+        )
+        oversized_result = fetch.call(
+            {
+                "url": "https://example.com",
+                "max_chars": 21,
+            }
+        )
+        missing_url_result = fetch.call({})
+        invalid_url_result = fetch.call({"url": {"not": "valid"}})
+        start_line_result = fetch.call({"url": "https://example.com", "start_line": 0})
+        end_line_result = fetch.call({"url": "https://example.com", "start_line": 3, "end_line": 2})
+        max_chars_zero_result = fetch.call({"url": "https://example.com", "max_chars": 0})
+        list_result = fetch.call(
+            {
+                "url": ["https://example.com/a", "https://example.com/b"],
+                "start_line": 1,
+                "end_line": 1,
+                "max_chars": 20,
+            }
+        )
+    finally:
+        if old_timeout is None:
+            os.environ.pop("WEBFETCH_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["WEBFETCH_TIMEOUT_SECONDS"] = old_timeout
+        if old_max_chars is None:
+            os.environ.pop("WEBFETCH_MAX_CHARS", None)
+        else:
+            os.environ["WEBFETCH_MAX_CHARS"] = old_max_chars
 
     detail = json.dumps(
         {
-            "claude_request_kwargs": claude_fetch._summary_client.request_kwargs,
-            "claude_result": claude_result,
-            "gpt_request_kwargs": gpt_fetch._summary_client.request_kwargs,
-            "gpt_result": gpt_result,
-            "gpt55_request_kwargs": gpt55_fetch._summary_client.request_kwargs,
-            "gpt55_result": gpt55_result,
+            "result": result,
+            "result_preview": result[:200],
+            "oversized_result": oversized_result,
+            "missing_url_result": missing_url_result,
+            "invalid_url_result": invalid_url_result,
+            "start_line_result": start_line_result,
+            "end_line_result": end_line_result,
+            "max_chars_zero_result": max_chars_zero_result,
+            "list_result": list_result,
+            "fetched_urls": fetched_urls,
         },
         ensure_ascii=False,
         indent=2,
     )
     ok = (
-        isinstance(claude_fetch._summary_client.request_kwargs, dict)
-        and "temperature" not in claude_fetch._summary_client.request_kwargs
-        and "top_p" not in claude_fetch._summary_client.request_kwargs
-        and "presence_penalty" not in claude_fetch._summary_client.request_kwargs
-        and isinstance(gpt_fetch._summary_client.request_kwargs, dict)
-        and gpt_fetch._summary_client.request_kwargs.get("temperature") == 0.3
-        and gpt_fetch._summary_client.request_kwargs.get("top_p") == 0.8
-        and gpt_fetch._summary_client.request_kwargs.get("presence_penalty") == 0.2
-        and isinstance(gpt55_fetch._summary_client.request_kwargs, dict)
-        and gpt55_fetch._summary_client.request_kwargs.get("temperature") == 0.3
-        and gpt55_fetch._summary_client.request_kwargs.get("top_p") == 0.8
-        and "presence_penalty" not in gpt55_fetch._summary_client.request_kwargs
+        "source_type: web" in result
+        and "start_line: 2" in result
+        and "end_line: 4" in result
+        and "truncated: true" in result
+        and "line 2 beta" in result
+        and "line 1 alpha" not in result
+        and "Summary:" not in result
+        and "Evidence in page:" not in result
+        and not hasattr(fetch, "call_server")
+        and "goal" not in WebFetch.parameters["properties"]
+        and WebFetch.parameters["required"] == ["url"]
+        and "max_chars must be <= WEBFETCH_MAX_CHARS (20)" in oversized_result
+        and "Missing required parameter: url" in missing_url_result
+        and "Parameter 'url' must be of type string or array" in invalid_url_result
+        and "start_line must be >= 1" in start_line_result
+        and "end_line must be >= start_line" in end_line_result
+        and "max_chars must be > 0" in max_chars_zero_result
+        and list_result.count("source_type: web") == 2
+        and "=======\nurl: https://example.com/b" in list_result
+        and fetched_urls == ["https://example.com", "https://example.com/a", "https://example.com/b"]
     )
     return ok, detail
 
@@ -1847,7 +1867,7 @@ def main() -> int:
         ("Truncated tool call replay", check_truncated_tool_call_turn_is_replayed_without_execution),
         ("Terminal error accepts artifact", check_terminal_error_can_be_accepted_after_completion_artifact),
         ("Claude runtime sampling params", check_claude_models_skip_sampling_params_in_agent_runtime),
-        ("Claude WebFetch sampling params", check_claude_models_skip_sampling_params_in_webfetch_summary),
+        ("WebFetch range-bounded page text", check_webfetch_returns_range_bounded_page_text_without_summary_llm),
         ("Plaintext result max rounds", check_plaintext_result_rejection_hits_max_rounds),
         ("Bash output bounding", check_bash_output_bounding_and_repeat_collapse),
     ]

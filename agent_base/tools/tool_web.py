@@ -1,25 +1,33 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Union
 
 import requests
-import tiktoken
-from openai import APIConnectionError, APIError, APITimeoutError, OpenAI
 
-from agent_base.provider_compat import apply_sampling_params
-from agent_base.prompt import EXTRACTOR_PROMPT
 from agent_base.tools.tooling import ToolBase
 from agent_base.utils import PROJECT_ROOT, env_flag, load_dotenv
 
-DEFAULT_LLM_TIMEOUT_SECONDS = 600.0
-DEFAULT_LLM_MAX_RETRIES = 10
-DEFAULT_TEMPERATURE = 0.6
-DEFAULT_TOP_P = 0.95
-DEFAULT_PRESENCE_PENALTY = 1.1
+DEFAULT_WEBFETCH_TIMEOUT_SECONDS = 180.0
+DEFAULT_WEBFETCH_MAX_CHARS = 30000
+
+
+def webfetch_timeout_seconds() -> float:
+    timeout = float(os.getenv("WEBFETCH_TIMEOUT_SECONDS", str(DEFAULT_WEBFETCH_TIMEOUT_SECONDS)))
+    if timeout <= 0:
+        raise ValueError("WEBFETCH_TIMEOUT_SECONDS must be > 0.")
+    return timeout
+
+
+def webfetch_default_max_chars() -> int:
+    max_chars = int(os.getenv("WEBFETCH_MAX_CHARS", str(DEFAULT_WEBFETCH_MAX_CHARS)))
+    if max_chars <= 0:
+        raise ValueError("WEBFETCH_MAX_CHARS must be > 0.")
+    return max_chars
 
 
 def search_debug_enabled() -> bool:
@@ -44,51 +52,11 @@ def _request_error_text(exc: requests.RequestException) -> str:
     return f"{exc}; response_body={body}" if body else str(exc)
 
 
-def truncate_to_tokens(text: str, max_tokens: int = 95000) -> str:
-    encoding = tiktoken.get_encoding("cl100k_base")
-    tokens = encoding.encode(text)
-    if len(tokens) <= max_tokens:
-        return text
-    truncated_tokens = tokens[:max_tokens]
-    return encoding.decode(truncated_tokens)
-
-
-def _stringify_field(value) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if value is None:
-        return ""
-    if isinstance(value, (list, dict)):
-        try:
-            return json.dumps(value, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(value).strip()
-    return str(value).strip()
-
-
-def _webfetch_failure(url: str, goal: str, reason: str) -> str:
-    useful_information = "The useful information in {url} for user goal {goal} as follows: \n\n".format(url=url, goal=goal)
-    useful_information += "Evidence in page: \n" + reason + "\n\n"
-    useful_information += "Summary: \n" + "The webpage content could not be processed into the required structured summary." + "\n\n"
-    return useful_information
-
-
-def _parse_extractor_payload(raw) -> tuple[str, str] | None:
-    if isinstance(raw, str):
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-
-    if not isinstance(raw, dict):
-        return None
-
-    evidence = _stringify_field(raw.get("evidence"))
-    summary = _stringify_field(raw.get("summary"))
-    if not evidence or not summary:
-        return None
-    return evidence, summary
+def _clean_webpage_text(text: str) -> str:
+    text = str(text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{4,}", "\n\n\n", text)
+    return text.strip()
 
 
 class WebSearch(ToolBase):
@@ -307,7 +275,7 @@ class ScholarSearch(ToolBase):
 
 class WebFetch(ToolBase):
     name = "WebFetch"
-    description = "Fetch webpage content and return evidence plus a goal-focused summary."
+    description = "Fetch webpage content and return cleaned, range-bounded page text for the agent to inspect."
     parameters = {
         "type": "object",
         "properties": {
@@ -319,45 +287,24 @@ class WebFetch(ToolBase):
                 "minItems": 1,
                 "description": "The URL(s) of the webpage(s) to visit. Can be a single URL or an array of URLs.",
             },
-            "goal": {
-                "type": "string",
-                "description": "The goal of the visit for webpage(s).",
+            "start_line": {
+                "type": "integer",
+                "description": "Optional 1-based start line for partial reading. Default is 1.",
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "Optional 1-based end line for partial reading. If omitted, read to the end.",
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "Maximum number of characters to return. Default is 30000 and the value must not exceed WEBFETCH_MAX_CHARS.",
             },
         },
-        "required": ["url", "goal"],
+        "required": ["url"],
     }
 
     def __init__(self, cfg: Optional[dict] = None):
         super().__init__(cfg)
-        self._summary_client: Optional[OpenAI] = None
-        self._summary_api_base: Optional[str] = None
-        self._summary_model_name = os.environ.get("MODEL_NAME", "").strip()
-        self._summary_timeout_seconds = float(
-            os.getenv("LLM_TIMEOUT_SECONDS", str(DEFAULT_LLM_TIMEOUT_SECONDS))
-        )
-        self._summary_temperature = float(os.getenv("TEMPERATURE", str(DEFAULT_TEMPERATURE)))
-        self._summary_top_p = float(os.getenv("TOP_P", str(DEFAULT_TOP_P)))
-        self._summary_presence_penalty = float(os.getenv("PRESENCE_PENALTY", str(DEFAULT_PRESENCE_PENALTY)))
-
-    def _ensure_summary_client(self) -> Optional[OpenAI]:
-        if self._summary_client is not None:
-            return self._summary_client
-        self._summary_api_base = os.environ.get("API_BASE")
-        self._summary_model_name = os.environ.get("MODEL_NAME", "").strip()
-        self._summary_timeout_seconds = float(
-            os.getenv("LLM_TIMEOUT_SECONDS", str(DEFAULT_LLM_TIMEOUT_SECONDS))
-        )
-        self._summary_temperature = float(os.getenv("TEMPERATURE", str(DEFAULT_TEMPERATURE)))
-        self._summary_top_p = float(os.getenv("TOP_P", str(DEFAULT_TOP_P)))
-        self._summary_presence_penalty = float(os.getenv("PRESENCE_PENALTY", str(DEFAULT_PRESENCE_PENALTY)))
-        if not self._summary_api_base:
-            return None
-        self._summary_client = OpenAI(
-            api_key=os.environ.get("API_KEY", "EMPTY"),
-            base_url=self._summary_api_base,
-            timeout=self._summary_timeout_seconds,
-        )
-        return self._summary_client
 
     @staticmethod
     def _remaining_budget_seconds(runtime_deadline: Optional[float]) -> Optional[float]:
@@ -365,99 +312,103 @@ class WebFetch(ToolBase):
             return None
         return runtime_deadline - time.time()
 
+    @staticmethod
+    def _webfetch_deadline(runtime_deadline: Optional[float]) -> float:
+        tool_deadline = time.time() + webfetch_timeout_seconds()
+        if runtime_deadline is None:
+            return tool_deadline
+        return min(float(runtime_deadline), tool_deadline)
+
+    @staticmethod
+    def _format_page_content(
+        *,
+        url: str,
+        content: str,
+        start_line: int,
+        end_line: Optional[int],
+        max_chars: int,
+    ) -> str:
+        clean_content = _clean_webpage_text(content)
+        lines = clean_content.splitlines()
+        selected_lines = lines[start_line - 1:end_line]
+        selected_content = "\n".join(selected_lines)
+        truncated = len(selected_content) > max_chars
+        returned_content = selected_content[:max_chars] if truncated else selected_content
+        effective_end_line = end_line if end_line is not None else len(lines)
+        meta = [
+            f"url: {url}",
+            "source_type: web",
+            f"start_line: {start_line}",
+            f"end_line: {effective_end_line}",
+            f"total_lines: {len(lines)}",
+            f"total_chars: {len(clean_content)}",
+            f"max_chars: {max_chars}",
+            f"returned_chars: {len(returned_content)}",
+            f"truncated: {str(truncated).lower()}",
+        ]
+        if truncated:
+            meta.append("note: content was truncated by max_chars; use a narrower line range, or raise max_chars only up to WEBFETCH_MAX_CHARS if this call used a smaller value.")
+        return "\n".join(meta) + "\ncontent:\n" + returned_content
+
     def call(self, params: Union[str, dict], **kwargs) -> str:
         try:
             params = self.parse_json_args(params)
             url = params["url"]
-            goal = params["goal"]
         except ValueError as exc:
             return f"[WebFetch] {exc}"
-        runtime_deadline = kwargs.get("runtime_deadline")
-        summary_model_name = str(kwargs.get("model_name") or "").strip()
-
-        start_time = time.time()
+        try:
+            start_line = int(params.get("start_line", 1))
+            end_line_raw = params.get("end_line")
+            end_line = int(end_line_raw) if end_line_raw is not None else None
+            max_chars_limit = webfetch_default_max_chars()
+            max_chars_raw = params.get("max_chars")
+            max_chars = int(max_chars_raw) if max_chars_raw is not None else max_chars_limit
+        except (TypeError, ValueError):
+            return "[WebFetch] start_line, end_line, and max_chars must be integers when provided."
+        if start_line < 1:
+            return "[WebFetch] start_line must be >= 1."
+        if end_line is not None and end_line < start_line:
+            return "[WebFetch] end_line must be >= start_line."
+        if max_chars <= 0:
+            return "[WebFetch] max_chars must be > 0."
+        if max_chars > max_chars_limit:
+            return f"[WebFetch] max_chars must be <= WEBFETCH_MAX_CHARS ({max_chars_limit}). Use a narrower line range to read more of the page."
+        try:
+            runtime_deadline = self._webfetch_deadline(kwargs.get("runtime_deadline"))
+        except ValueError as exc:
+            return f"[WebFetch] {exc}"
 
         if isinstance(url, str):
-            response = self.readpage_jina(url, goal, runtime_deadline=runtime_deadline, summary_model_name=summary_model_name)
+            response = self.readpage_jina(
+                url,
+                start_line=start_line,
+                end_line=end_line,
+                max_chars=max_chars,
+                runtime_deadline=runtime_deadline,
+            )
         elif isinstance(url, list):
             response = []
-            start_time = time.time()
             for one_url in url:
                 remaining = self._remaining_budget_seconds(runtime_deadline)
                 if remaining is not None and remaining <= 0:
-                    cur_response = _webfetch_failure(
-                        url=one_url,
-                        goal=goal,
-                        reason="Agent runtime limit reached before WebFetch could complete.",
-                    )
+                    cur_response = "[WebFetch] Failed to read page: agent runtime limit reached."
                     response.append(cur_response)
                     continue
-                if time.time() - start_time > 900:
-                    cur_response = "The useful information in {url} for user goal {goal} as follows: \n\n".format(url=one_url, goal=goal)
-                    cur_response += "Evidence in page: \n" + "The provided webpage content could not be accessed. Please check the URL or file format." + "\n\n"
-                    cur_response += "Summary: \n" + "The webpage content could not be processed, and therefore, no information is available." + "\n\n"
-                else:
-                    cur_response = self.readpage_jina(
-                        one_url,
-                        goal,
-                        runtime_deadline=runtime_deadline,
-                        summary_model_name=summary_model_name,
-                    )
+                cur_response = self.readpage_jina(
+                    one_url,
+                    start_line=start_line,
+                    end_line=end_line,
+                    max_chars=max_chars,
+                    runtime_deadline=runtime_deadline,
+                )
                 response.append(cur_response)
             response = "\n=======\n".join(response)
         else:
             return "[WebFetch] 'url' must be a string or a list of strings."
 
         if visit_debug_enabled():
-            print(f"Summary Length {len(response)}")
+            print(f"WebFetch Length {len(response)}")
         return response.strip()
-
-    def call_server(
-        self,
-        msgs,
-        max_retries=2,
-        runtime_deadline: Optional[float] = None,
-        model_name: str = "",
-    ):
-        client = self._ensure_summary_client()
-        if client is None or not self._summary_api_base:
-            return "[WebFetch] Summary model error: API_BASE is not set."
-        summary_model_name = str(model_name or self._summary_model_name or os.environ.get("MODEL_NAME", "")).strip()
-        if not summary_model_name:
-            return "[WebFetch] Summary model error: MODEL_NAME is not set."
-        last_error = "unknown summary-model error"
-        for attempt in range(max_retries):
-            remaining = self._remaining_budget_seconds(runtime_deadline)
-            if remaining is not None and remaining <= 0:
-                return "[WebFetch] Summary model error: agent runtime limit reached."
-            try:
-                request_client = (
-                    client.with_options(timeout=min(self._summary_timeout_seconds, max(remaining, 0.001)))
-                    if remaining is not None
-                    else client
-                )
-                request_kwargs = {
-                    "model": summary_model_name,
-                    "messages": msgs,
-                }
-                apply_sampling_params(
-                    request_kwargs,
-                    model_name=summary_model_name,
-                    temperature=self._summary_temperature,
-                    top_p=self._summary_top_p,
-                    presence_penalty=self._summary_presence_penalty,
-                )
-                chat_response = request_client.chat.completions.create(**request_kwargs)
-                content = chat_response.choices[0].message.content
-                if content:
-                    return content
-                last_error = "empty response from summary model"
-            except (APIError, APIConnectionError, APITimeoutError) as exc:
-                last_error = str(exc)
-                if attempt == (max_retries - 1):
-                    return f"[WebFetch] Summary model error: {last_error}"
-
-        return f"[WebFetch] Summary model error: {last_error}"
 
     def jina_readpage(self, url: str, runtime_deadline: Optional[float] = None) -> str:
         max_retries = 3
@@ -510,98 +461,21 @@ class WebFetch(ToolBase):
     def readpage_jina(
         self,
         url: str,
-        goal: str,
+        *,
+        start_line: int = 1,
+        end_line: Optional[int] = None,
+        max_chars: int = DEFAULT_WEBFETCH_MAX_CHARS,
         runtime_deadline: Optional[float] = None,
-        summary_model_name: str = "",
     ) -> str:
-        def summary_page_func(messages, max_retries=2, runtime_deadline: Optional[float] = None):
-            return self.call_server(
-                messages,
-                max_retries=max_retries,
-                runtime_deadline=runtime_deadline,
-                model_name=summary_model_name,
-            )
-
-        max_retries = int(os.getenv("LLM_MAX_RETRIES", str(DEFAULT_LLM_MAX_RETRIES)))
-
         content = self.html_readpage_jina(url, runtime_deadline=runtime_deadline)
-
-        if content and not content.startswith("[WebFetch] Failed to read page:") and content != "[WebFetch] Empty content." and not content.startswith("[document_parser]"):
-            content = truncate_to_tokens(content, max_tokens=95000)
-            messages = [{"role": "user", "content": EXTRACTOR_PROMPT.format(webpage_content=content, goal=goal)}]
-            raw = summary_page_func(messages, max_retries=max_retries, runtime_deadline=runtime_deadline)
-            summary_retries = 3
-            while len(raw) < 10 and summary_retries >= 0:
-                remaining = self._remaining_budget_seconds(runtime_deadline)
-                if remaining is not None and remaining <= 0:
-                    return _webfetch_failure(
-                        url=url,
-                        goal=goal,
-                        reason="Agent runtime limit reached before WebFetch could complete.",
-                    )
-                truncate_length = int(0.7 * len(content)) if summary_retries > 0 else 25000
-                status_msg = (
-                    f"[WebFetch] Summary url[{url}] "
-                    f"attempt {3 - summary_retries + 1}/3, "
-                    f"content length: {len(content)}, "
-                    f"truncating to {truncate_length} chars"
-                ) if summary_retries > 0 else (
-                    f"[WebFetch] Summary url[{url}] failed after 3 attempts, "
-                    f"final truncation to 25000 chars"
-                )
-                if visit_debug_enabled():
-                    print(status_msg)
-                content = content[:truncate_length]
-                extraction_prompt = EXTRACTOR_PROMPT.format(
-                    webpage_content=content,
-                    goal=goal,
-                )
-                messages = [{"role": "user", "content": extraction_prompt}]
-                raw = summary_page_func(messages, max_retries=max_retries, runtime_deadline=runtime_deadline)
-                summary_retries -= 1
-
-            parse_retry_times = 0
-            parsed = _parse_extractor_payload(raw)
-            while parse_retry_times < 3:
-                if parsed is not None:
-                    break
-                remaining = self._remaining_budget_seconds(runtime_deadline)
-                if remaining is not None and remaining <= 0:
-                    return _webfetch_failure(
-                        url=url,
-                        goal=goal,
-                        reason="Agent runtime limit reached before WebFetch could complete.",
-                    )
-                raw = summary_page_func(messages, max_retries=max_retries, runtime_deadline=runtime_deadline)
-                parsed = _parse_extractor_payload(raw)
-                parse_retry_times += 1
-
-            if parsed is None:
-                reason = "The webpage content was fetched, but the summary model did not return the required evidence and summary fields."
-                if isinstance(raw, str) and raw.startswith("[WebFetch] Summary model error:"):
-                    reason = raw
-                useful_information = _webfetch_failure(
-                    url=url,
-                    goal=goal,
-                    reason=reason,
-                )
-            else:
-                evidence, summary = parsed
-                useful_information = "The useful information in {url} for user goal {goal} as follows: \n\n".format(url=url, goal=goal)
-                useful_information += "Evidence in page: \n" + evidence + "\n\n"
-                useful_information += "Summary: \n" + summary + "\n\n"
-
-            if len(useful_information) < 10 and summary_retries < 0:
-                if visit_debug_enabled():
-                    print("[WebFetch] Could not generate valid summary after maximum retries")
-                useful_information = "[WebFetch] Failed to read page."
-
-            return useful_information
-
-        return _webfetch_failure(
+        if not content or content.startswith("[WebFetch] Failed to read page:") or content == "[WebFetch] Empty content." or content.startswith("[document_parser]"):
+            return "[WebFetch] Failed to read page: the provided webpage content could not be accessed. Please check the URL or file format."
+        return self._format_page_content(
             url=url,
-            goal=goal,
-            reason="The provided webpage content could not be accessed. Please check the URL or file format.",
+            content=content,
+            start_line=start_line,
+            end_line=end_line,
+            max_chars=max_chars,
         )
 
 
@@ -617,7 +491,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     fetch_parser = subparsers.add_parser("fetch", help="Run WebFetch.")
     fetch_parser.add_argument("url")
-    fetch_parser.add_argument("goal")
+    fetch_parser.add_argument("--start-line", type=int, default=1)
+    fetch_parser.add_argument("--end-line", type=int)
+    fetch_parser.add_argument("--max-chars", type=int)
 
     args = parser.parse_args(argv)
     load_dotenv(PROJECT_ROOT / ".env")
@@ -627,7 +503,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif args.tool == "scholar":
         result = ScholarSearch().call({"query": [" ".join(args.query)]})
     else:
-        result = WebFetch().call({"url": args.url, "goal": args.goal})
+        result = WebFetch().call(
+            {
+                "url": args.url,
+                "start_line": args.start_line,
+                "end_line": args.end_line,
+                "max_chars": args.max_chars if args.max_chars is not None else webfetch_default_max_chars(),
+            }
+        )
     print(result)
     return 0
 

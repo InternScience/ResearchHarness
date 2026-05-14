@@ -45,7 +45,7 @@ The current tool set is:
 | `Bash` | Runtime | `command`, `timeout?`, `workdir?` | Run one-shot shell commands for deterministic local execution, parsing, and validation. | Returns `stdout` and `stderr`. Primary local execution tool for short Python, `rg`, `find`, `git`, and structured local processing. |
 | `WebSearch` | Web | `query` | Perform general web search over one or more complementary queries. | Returns a text summary headed by `## Web Results` with title, link, snippet, and date/source when available. Uses Serper. |
 | `ScholarSearch` | Web | `query` | Search academic results such as papers, year, abstract, and citations. | Returns a text summary headed by `## Scholar Results` with title, PDF link, publication info, year, citation count, and abstract. Uses Serper Scholar. |
-| `WebFetch` | Web | `url`, `goal` | Fetch a page, extract evidence relevant to a concrete goal, and summarize it. | Uses Jina Reader plus the configured summary model. Returns evidence-focused text rather than raw HTML. |
+| `WebFetch` | Web | `url`, `start_line?`, `end_line?`, `max_chars?` | Fetch a page and return cleaned, range-bounded webpage text. | Uses Jina Reader only. Returns metadata plus page content so the main agent can inspect and summarize the evidence itself. |
 | `AskUser` | Human interaction | `question`, `context?` | Ask the human user one concise clarification question when essential information cannot be determined from tools or existing instructions. | Writes the question to the interactive terminal and returns the user's answer. If no interactive terminal is available, returns an explicit unavailable message. |
 | `TerminalStart` | Runtime | `cwd?`, `shell?`, `rows?`, `cols?` | Start a persistent terminal session. | Returns session metadata such as `session_id`, `pid`, `cwd`, `shell`, `alive`, and `returncode`. |
 | `TerminalWrite` | Runtime | `session_id`, `input`, `append_newline?`, `yield_time_ms?`, `max_output_chars?` | Send input to a persistent terminal session and read incremental output. | Best for stateful shells, REPLs, and long-running foreground processes. |
@@ -325,32 +325,34 @@ Returns:
 Purpose:
 
 - Visit a webpage.
-- Extract evidence relevant to a concrete goal.
-- Produce a goal-oriented summary.
+- Return cleaned page text for the main agent to inspect.
+- Keep default output bounded while allowing follow-up range reads for the full page.
 
 Arguments:
 
 - `url`: string or array of strings, page URL or URLs
-- `goal`: string, the specific goal to extract from the page
+- `start_line`: optional integer, 1-based start line, defaults to `1`
+- `end_line`: optional integer, 1-based end line
+- `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `30000`
 
 Behavior:
 
-- Fetches page text through Jina Reader first.
-- Then calls the configured summary-model endpoint for evidence extraction and summarization.
-- Returns a fetch-and-extract result, not raw HTML.
+- Fetches page text through Jina Reader.
+- Applies simple deterministic cleanup to whitespace and blank lines.
+- Applies the requested line range and per-call character limit.
+- Does not call an LLM inside the tool; the main agent is responsible for reading, reasoning over, and summarizing the returned content.
 
 Dependencies:
 
 - `JINA_KEY`
-- `API_KEY`
-- `API_BASE`
-- `MODEL_NAME`
 
 Returns:
 
-- `The useful information in ...`
-- `Evidence in page:`
-- `Summary:`
+- `url`
+- `source_type: web`
+- `start_line`, `end_line`, `total_lines`
+- `total_chars`, `max_chars`, `returned_chars`, `truncated`
+- `content`
 
 ## TerminalStart
 

@@ -20,10 +20,17 @@
         </div>
         <div class="top-actions">
           <button id="pickWorkspaceBtn" class="plain" type="button">Open workspace</button>
-          <select id="modelSelect" class="model-select" aria-label="Model">
-            <option value="gpt-5.5">gpt-5.5</option>
-            <option value="claude-opus-4-7">claude-opus-4-7</option>
-          </select>
+          <div id="modelDropdown" class="model-dropdown">
+            <button id="modelDropdownButton" class="model-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span id="modelSelectLabel">gpt-5.5</span>
+              <span class="model-select-caret" aria-hidden="true"></span>
+            </button>
+            <input id="modelSelect" type="hidden" value="gpt-5.5" />
+            <div id="modelOptions" class="model-options" role="listbox" aria-label="Model">
+              <button class="model-option selected" type="button" role="option" aria-selected="true" data-model-value="gpt-5.5">gpt-5.5</button>
+              <button class="model-option" type="button" role="option" aria-selected="false" data-model-value="claude-opus-4-7">claude-opus-4-7</button>
+            </div>
+          </div>
           <button id="newBtn" class="plain" type="button">New chat</button>
         </div>
       </header>

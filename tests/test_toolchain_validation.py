@@ -113,7 +113,6 @@ def main() -> int:
     visit_output = visit_tool.call(
         {
             "url": [EXPECTED_VISITED_URL],
-            "goal": "Extract the list of authors of the paper Attention Is All You Need and the publication year.",
         }
     )
     tools_called.append("WebFetch")

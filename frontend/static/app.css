@@ -124,7 +124,7 @@ button {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 4;
+  z-index: 8;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -215,9 +215,90 @@ button {
   padding: 8px 12px;
 }
 
+.model-dropdown {
+  position: relative;
+}
+
 .model-select {
   min-width: 150px;
-  padding: 8px 34px 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.model-select-caret {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.model-dropdown.open .model-select-caret {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.model-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid rgba(var(--glow-rgb), 0.18);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.model-dropdown.open .model-options {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.model-option {
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font: inherit;
+  font-weight: 850;
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.model-option:hover,
+.model-option:focus-visible,
+.model-option.selected {
+  background: rgba(var(--glow-rgb), 0.1);
+}
+
+.model-option.selected::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.72;
 }
 
 .plain:hover,

@@ -137,6 +137,10 @@
   var runBtn = document.getElementById("runBtn");
   var newBtn = document.getElementById("newBtn");
   var modelSelect = document.getElementById("modelSelect");
+  var modelDropdown = document.getElementById("modelDropdown");
+  var modelDropdownButton = document.getElementById("modelDropdownButton");
+  var modelSelectLabel = document.getElementById("modelSelectLabel");
+  var modelOptions = document.getElementById("modelOptions");
   var pickWorkspaceBtn = document.getElementById("pickWorkspaceBtn");
   var attachBtn = document.getElementById("attachBtn");
   var imageInput = document.getElementById("imageInput");
@@ -229,20 +233,67 @@
     workspaceMeta.textContent = "Workspace selected: " + path;
   }
 
+  function closeModelDropdown() {
+    if (!modelDropdown || !modelDropdownButton) return;
+    modelDropdown.classList.remove("open");
+    modelDropdownButton.setAttribute("aria-expanded", "false");
+  }
+
+  function setModelValue(value) {
+    if (!modelSelect || !value) return;
+    modelSelect.value = value;
+    if (modelSelectLabel) modelSelectLabel.textContent = value;
+    if (!modelOptions) return;
+    modelOptions.querySelectorAll(".model-option").forEach(function (option) {
+      var selected = option.getAttribute("data-model-value") === value;
+      option.classList.toggle("selected", selected);
+      option.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+  }
+
+  function setModelControlDisabled(disabled) {
+    if (modelSelect) modelSelect.disabled = disabled;
+    if (modelDropdownButton) modelDropdownButton.disabled = disabled;
+    if (disabled) closeModelDropdown();
+  }
+
+  function setupModelDropdown() {
+    if (!modelDropdown || !modelDropdownButton || !modelOptions || !modelSelect) return;
+    setModelValue(modelSelect.value || "gpt-5.5");
+    modelDropdownButton.addEventListener("click", function () {
+      if (modelDropdownButton.disabled) return;
+      var shouldOpen = !modelDropdown.classList.contains("open");
+      modelDropdown.classList.toggle("open", shouldOpen);
+      modelDropdownButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    });
+    modelOptions.querySelectorAll(".model-option").forEach(function (option) {
+      option.addEventListener("click", function () {
+        setModelValue(option.getAttribute("data-model-value"));
+        closeModelDropdown();
+      });
+    });
+    document.addEventListener("click", function (event) {
+      if (!modelDropdown.contains(event.target)) closeModelDropdown();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeModelDropdown();
+    });
+  }
+
   function updateComposerMode() {
     if (pendingAskId) {
       runBtn.disabled = false;
       runBtn.classList.remove("is-running");
       runBtn.textContent = "Reply";
       promptInput.placeholder = defaultPromptPlaceholder;
-      if (modelSelect) modelSelect.disabled = true;
+      setModelControlDisabled(true);
       return;
     }
     runBtn.disabled = running && interrupting;
     runBtn.classList.toggle("is-running", running);
     runBtn.textContent = running ? (interrupting ? "Stopping" : "Stop") : "Run";
     promptInput.placeholder = defaultPromptPlaceholder;
-    if (modelSelect) modelSelect.disabled = running;
+    setModelControlDisabled(running);
   }
 
   function setRunning(active, statusText) {
@@ -697,6 +748,8 @@
       renderWorkspaceError(String(error));
     }
   }
+
+  setupModelDropdown();
 
   runBtn.addEventListener("click", sendStart);
   timeline.addEventListener("scroll", syncTimelineFollowMode);

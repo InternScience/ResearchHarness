@@ -118,7 +118,8 @@ def test_frontend_static_interaction_contract() -> None:
     assert 'placeholder="Message ResearchHarness"' in html
     assert 'id="modelSelect"' in html
     assert 'value="gpt-5.5"' in html
-    assert 'value="claude-opus-4-7"' in html
+    assert 'id="modelOptions"' in html
+    assert 'data-model-value="claude-opus-4-7"' in html
     assert "Message ResearchHarness... Enter sends" not in html
     assert 'id="workspaceStrip"' in html
     assert 'id="workspaceInput" type="hidden"' in html
@@ -147,6 +148,7 @@ def test_frontend_static_interaction_contract() -> None:
     assert "conversationStarted" in js
     assert "continue_conversation" in js
     assert "modelSelect" in js
+    assert "setupModelDropdown" in js
     assert "model_name: modelSelect ? modelSelect.value : \"\"" in js
     assert "setEventExpanded" in js
     assert "refreshEventCollapseCapability" in js

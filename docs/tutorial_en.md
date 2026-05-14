@@ -11,6 +11,52 @@ agents. It can be used as:
 - an OpenAI-compatible synchronous API backend,
 - a personal assistant runtime for files, code, reports, PDFs, images, and web tasks.
 
+## Project Structure
+
+If you are reading the repository for the first time, start with these paths.
+
+### Core runtime
+
+- [run_agent.py](../run_agent.py): thin command-line entrypoint for direct agent runs.
+- [run_frontend.py](../run_frontend.py): one-command launcher for the local browser UI.
+- [run_server.py](../run_server.py): OpenAI-compatible API server entrypoint.
+- [api/openai_server.py](../api/openai_server.py): `/v1/chat/completions` request handling, wrappers, and per-request run directories.
+- [frontend/](../frontend): local WebSocket UI, static assets, and browser AskUser bridge.
+- [agent_base/react_agent.py](../agent_base/react_agent.py): main ReAct loop, model calls, tool-call handling, trace/session state integration.
+- [agent_base/base.py](../agent_base/base.py): base agent hooks for extension and benchmark adapters.
+- [agent_base/prompt.py](../agent_base/prompt.py): base system prompt composition.
+- [agent_base/trace_utils.py](../agent_base/trace_utils.py): flat JSONL trace writer.
+- [agent_base/console_utils.py](../agent_base/console_utils.py): readable CLI event printing.
+
+### Tools
+
+- [agent_base/tools/tool_file.py](../agent_base/tools/tool_file.py): file, PDF, and image tools.
+- [agent_base/tools/tool_runtime.py](../agent_base/tools/tool_runtime.py): Bash and persistent terminal tools.
+- [agent_base/tools/tool_web.py](../agent_base/tools/tool_web.py): web search, scholar search, and webpage fetching.
+- [agent_base/tools/README.md](../agent_base/tools/README.md): detailed tool documentation.
+
+### Benchmark and API adapters
+
+- [benchmarks/README.md](../benchmarks/README.md): benchmark adapter overview.
+- [benchmarks/](../benchmarks): benchmark-specific role prompts and adapters.
+- [benchmarks/QA/README.md](../benchmarks/QA/README.md): QA/VQA OpenAI-compatible API usage.
+
+### Docs and tests
+
+- [docs/tutorial_en.md](tutorial_en.md): this English tutorial.
+- [docs/tutorial_zh.md](tutorial_zh.md): Chinese tutorial.
+- [tests/](../tests): tool checks and end-to-end agent tests.
+- [tests/example_files/](../tests/example_files): fixed local fixtures.
+
+### Runtime roots
+
+- [workspace/](../workspace): default local CLI workspace root.
+- [api_runs/](../api_runs): default API deployment run root.
+- [traces/](../traces): default CLI trace output root.
+
+Only the `.gitkeep` files in these runtime roots are tracked. Generated files
+inside them are ignored.
+
 ## 1. Install
 
 Clone the repository and install dependencies:
@@ -45,6 +91,8 @@ Optional variables:
 | `MAX_AGENT_ROUNDS` | `100` | Maximum ReAct loop rounds. |
 | `MAX_AGENT_RUNTIME_SECONDS` | `9000` | Maximum wall-clock runtime for one agent run. |
 | `LLM_TIMEOUT_SECONDS` | `600` | Timeout for each LLM API request. |
+| `WEBFETCH_TIMEOUT_SECONDS` | `180` | Overall timeout for one WebFetch tool call. |
+| `WEBFETCH_MAX_CHARS` | `30000` | Hard maximum characters returned by one WebFetch call. |
 | `LLM_MAX_OUTPUT_TOKENS` | `10000` | Requested maximum output tokens. |
 | `MAX_INPUT_TOKENS` | `320000` | Input-token budget used by runtime accounting. |
 | `LLM_MAX_RETRIES` | `10` | Maximum retries for transient LLM API errors. |
@@ -230,6 +278,19 @@ agent. The output wrapper formats the agent result to match the user's requested
 answer contract. Wrappers must not invent new facts; they only normalize input
 and format output.
 
+### API Model Selection
+
+The OpenAI-compatible `model` field is a ResearchHarness routing label, not a
+provider selector. Use `RH` or omit `model` to run the default backend model
+from `MODEL_NAME`. To override the backend model for one request, use the exact
+two-hyphen prefix form `RH--<llm-model-name>`, for example `RH--gpt-5.5` or
+`RH--claude-opus-4-7`.
+
+Direct model names such as `gpt-5.5` are rejected. The override is local to that
+API request; it does not mutate environment variables and does not affect other
+concurrent requests. The agent run, input wrapper, output wrapper, and
+compaction all use the same selected backend model.
+
 The API server is intentionally one request -> one answer. It does not keep a
 server-side conversation between HTTP requests. If an application needs API
 multi-turn behavior, keep that state in the client and send the needed prior
@@ -249,14 +310,14 @@ Each API request creates one run directory:
 
 ```text
 ./api_runs/
-`-- run_YYYYMMDD_HHMMSS_<random>/
-    |-- agent_workspace/
-    |   `-- inputs/
-    |       `-- images/
-    `-- agent_trace/
-        |-- api_trace.jsonl
-        |-- trace_*.jsonl
-        `-- _session_state.json
+└── run_YYYYMMDD_HHMMSS_<random>/
+    ├── agent_workspace/          # visible to the agent
+    │   └── inputs/
+    │       └── images/           # user-provided images, when present
+    └── agent_trace/              # server-side trace and session state
+        ├── api_trace.jsonl
+        ├── trace_*.jsonl
+        └── _session_state.json
 ```
 
 Meaning:
@@ -355,8 +416,8 @@ Model routing follows a compact ResearchHarness label convention. Use `RH` or
 omit `model` to run the default backend `MODEL_NAME`. Use
 `RH--<llm-model-name>` with exactly two hyphens for a per-request override, for
 example `RH--gpt-5.5` or `RH--claude-opus-4-7`. The selected backend model is
-used consistently by the input wrapper, agent loop, compaction, `WebFetch`, and
-output wrapper for that request only.
+used consistently by the input wrapper, agent loop, compaction, and output
+wrapper for that request only.
 
 ### `POST /v1/chat/completions`
 
@@ -453,7 +514,7 @@ ResearchHarness currently includes:
 | `Bash` | Run shell commands inside the workspace. |
 | `WebSearch` | Web search through Serper. |
 | `ScholarSearch` | Scholar-style search through Serper. |
-| `WebFetch` | Fetch and summarize webpages through Jina and the configured model. |
+| `WebFetch` | Fetch cleaned, range-bounded webpage text through Jina from a URL, with optional `start_line`, `end_line`, and `max_chars` controls. |
 | `AskUser` | Ask a human for clarification in interactive runs. Disabled by some benchmark adapters. |
 | `TerminalStart` / `TerminalWrite` / `TerminalRead` / `TerminalInterrupt` / `TerminalKill` | Persistent terminal sessions. |
 
