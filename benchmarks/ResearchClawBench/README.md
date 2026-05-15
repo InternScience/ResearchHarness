@@ -32,11 +32,11 @@ and called by a benchmark runner. Start the server with the ResearchClawBench
 role prompt:
 
 ```bash
-python3 /abs/path/to/ResearchHarness/run_server.py \
+python3 run_server.py \
   --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
-  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/ResearchClawBench/role_prompt.md \
+  --role-prompt-file ./benchmarks/ResearchClawBench/role_prompt.md \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -88,7 +88,8 @@ the generic QA input/output wrappers by default.
 
 ## Notes
 
-- Replace `/abs/path/to/ResearchHarness/` with the real local checkout path.
+- In the `agents.json` entry, replace `/abs/path/to/ResearchHarness/` with the
+  real local checkout path.
 - The command should stay one-line and non-interactive.
 - Optional extra tools can be added directly to the same command. For example,
   add `--extra-tool str_replace_editor` if the benchmark configuration should

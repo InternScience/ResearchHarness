@@ -9,11 +9,11 @@ generic VQA task, so the generic QA wrappers are not recommended.
 ## Recommended Server Command
 
 ```bash
-python3 /abs/path/to/ResearchHarness/run_server.py \
+python3 run_server.py \
   --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
-  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/SGI-Reasoning/role_prompt.md \
+  --role-prompt-file ./benchmarks/SGI-Reasoning/role_prompt.md \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -24,6 +24,8 @@ The example below uses the first real `SGI-Reasoning` test item. The prompt
 matches the official SGI-Bench multiple-choice instruction shape, and the image
 is saved locally at
 [`example_imgs/SGI_Reasoning_0000_0.png`](example_imgs/SGI_Reasoning_0000_0.png).
+
+![SGI-Reasoning example image](example_imgs/SGI_Reasoning_0000_0.png)
 
 ```python
 import base64

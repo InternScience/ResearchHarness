@@ -159,7 +159,7 @@ python3 run_agent.py "Answer this QA task." \
 ```bash
 python3 run_agent.py "Read the image and return JSON." \
   --workspace-root ./workspace \
-  --images /path/to/image.png /path/to/second-image.png
+  --images /path/to/image-1.png /path/to/image-2.png
 ```
 
 每个图片路径都必须存在。RH 会把图片复制到 `./workspace/inputs/images/`，
@@ -212,7 +212,7 @@ python3 run_server.py \
   --port 8686
 ```
 
-推荐的 QA/VQA benchmark 部署，使用 benchmark role overlay 和 wrappers：
+可选的 strict-format QA/VQA benchmark 部署，使用 benchmark role overlay 和 wrappers：
 
 ```bash
 python3 run_server.py \

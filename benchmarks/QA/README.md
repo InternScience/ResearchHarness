@@ -10,11 +10,11 @@ For ordinary QA/VQA benchmark runs, start the OpenAI-compatible synchronous API
 server with the QA benchmark role overlay and no wrappers:
 
 ```bash
-python3 /abs/path/to/ResearchHarness/run_server.py \
+python3 run_server.py \
   --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
-  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/QA/role_prompt.md \
+  --role-prompt-file ./benchmarks/QA/role_prompt.md \
   --no-input-wrapper \
   --no-output-wrapper
 ```
@@ -26,11 +26,11 @@ For strict-format QA benchmarks, wrapper passes are optional and should be
 enabled only when they match the benchmark contract:
 
 ```bash
-python3 /abs/path/to/ResearchHarness/run_server.py \
+python3 run_server.py \
   --api-runs-dir ./api_runs \
   --host 127.0.0.1 \
   --port 8686 \
-  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/QA/role_prompt.md \
+  --role-prompt-file ./benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
 ```

@@ -431,7 +431,7 @@ Run with one extra role-prompt file appended to the base prompt:
 ```bash
 python3 -m agent_base.react_agent "review this artifact" \
   --workspace-root ./workspace \
-  --role-prompt-file /path/to/role_prompt.md
+  --role-prompt-file /abs/path/to/role_prompt.md
 ```
 
 Attach one or more local images to the initial user message:
@@ -439,7 +439,7 @@ Attach one or more local images to the initial user message:
 ```bash
 python3 run_agent.py "Read the image and answer in JSON." \
   --workspace-root ./workspace \
-  --images /path/to/image.png /path/to/second-image.png
+  --images /path/to/image-1.png /path/to/image-2.png
 ```
 
 Each `--images` path must exist. ResearchHarness copies every image into
@@ -572,7 +572,8 @@ python3 run_server.py \
   --port 8686
 ```
 
-Recommended QA/VQA benchmark deployment with the benchmark role overlay and wrappers:
+Optional strict-format QA/VQA benchmark deployment with the benchmark role
+overlay and wrappers:
 
 ```bash
 python3 run_server.py \

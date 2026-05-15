@@ -166,7 +166,7 @@ Attach a local image:
 ```bash
 python3 run_agent.py "Read the image and return JSON." \
   --workspace-root ./workspace \
-  --images /path/to/image.png /path/to/second-image.png
+  --images /path/to/image-1.png /path/to/image-2.png
 ```
 
 Each image path must exist. RH copies images into `./workspace/inputs/images/`,
@@ -223,7 +223,8 @@ python3 run_server.py \
   --port 8686
 ```
 
-Recommended QA/VQA benchmark deployment with a benchmark role overlay and wrappers:
+Optional strict-format QA/VQA benchmark deployment with a benchmark role overlay
+and wrappers:
 
 ```bash
 python3 run_server.py \
