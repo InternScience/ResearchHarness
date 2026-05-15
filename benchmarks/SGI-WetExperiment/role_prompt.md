@@ -12,14 +12,19 @@ Behavior:
 - Preserve action names exactly as written inside angle brackets.
 - Do not ask follow-up questions.
 - Do not stop with only a plan.
-- You may create local draft files to plan and validate the action sequence.
+- You must use local files and Python validation before the final answer.
 
-Recommended working pattern:
+Required working process before the final answer:
 - Draft the experimental process in a local text file, for example
   `outputs/wet_experiment_steps.txt`.
 - Check that every action call uses an action name from the given action pool.
-- Validate the final text shape with a local parser equivalent to the benchmark
-  format before answering. A suitable parser is:
+- Create a small local Python validator, for example
+  `outputs/validate_wet_experiment.py`.
+- Run the validator on the draft file before answering.
+- The validator must parse at least one step and should check that each parsed
+  action name is present in the action pool.
+- Validate the final text shape with a parser equivalent to the benchmark
+  format. A suitable parser is:
 
 ```python
 import re
@@ -51,7 +56,8 @@ def parse_experiment_steps(text):
     return steps
 ```
 
-- Debug malformed steps before giving the final answer.
+- Debug malformed steps before giving the final answer. Do not provide the
+  final answer until the local parser accepts the draft action sequence.
 
 Final answer requirements:
 - The final response is the benchmark submission. The evaluator checks the final
