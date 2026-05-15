@@ -25,7 +25,7 @@ entrypoint.
 }
 ```
 
-## API Server Deployment
+## Recommended Server Command
 
 ResearchHarness can also be exposed through its OpenAI-compatible API server
 and called by a benchmark runner. Start the server with the ResearchClawBench
@@ -41,11 +41,21 @@ python3 /abs/path/to/ResearchHarness/run_server.py \
   --no-output-wrapper
 ```
 
-Then send each RCB case through the OpenAI SDK and pass the prepared RCB
-workspace as `workspace-root`:
+## OpenAI Test Example
+
+Send each RCB case through the OpenAI SDK and pass the prepared RCB workspace
+as `workspace-root`. The example below mirrors how an RCB runner should provide
+the task prompt from the prepared workspace without exposing hidden checklist
+files.
 
 ```python
+from pathlib import Path
+
 from openai import OpenAI
+
+
+workspace = Path("/abs/path/to/rcb/workspace").resolve()
+rcb_prompt = (workspace / "INSTRUCTIONS.md").read_text(encoding="utf-8")
 
 client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
 

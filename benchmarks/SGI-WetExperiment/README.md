@@ -18,6 +18,62 @@ python3 /abs/path/to/ResearchHarness/run_server.py \
   --no-output-wrapper
 ```
 
+## OpenAI Test Example
+
+The example below uses the first real `SGI-WetExperiment` test item and appends
+the same action-sequence output requirement used by the official SGI-Bench
+evaluation script.
+
+```python
+from pathlib import Path
+
+from datasets import load_dataset
+from openai import OpenAI
+
+
+OUTPUT_REQUIREMENTS = """
+The final answer should be enclosed by <answer> and </answer>.
+
+Example:
+<answer>
+dataset = <Load dataset>(
+    source="imagenet"
+)
+
+model_init = <Initialize model>(
+    model_type="CNN"
+)
+
+model_trained = <Train model>(
+    model=model_init,
+    data=dataset
+)
+
+metrics = <Calculate metrics>(
+    model=model_trained,
+    data=dataset
+)
+</answer>
+"""
+
+dataset = load_dataset("InternScience/SGI-WetExperiment", split="test")
+row = dataset[0]
+prompt = row["question"] + OUTPUT_REQUIREMENTS
+
+workspace = Path("./workspace/sgi_wetexperiment_example").resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
+response = client.chat.completions.create(
+    model="RH",
+    messages=[{"role": "user", "content": prompt}],
+    extra_body={"workspace-root": str(workspace)},
+)
+
+print(response.choices[0].message.content)
+```
+
 ## Rationale
 
 - The scorer expects a strict action-call text format.

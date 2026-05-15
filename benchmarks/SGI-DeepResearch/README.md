@@ -18,6 +18,47 @@ python3 /abs/path/to/ResearchHarness/run_server.py \
   --no-output-wrapper
 ```
 
+## OpenAI Test Example
+
+The example below uses the first real `SGI-DeepResearch` test item and appends
+the same output requirement shape used by the official SGI-Bench evaluation
+script.
+
+```python
+from pathlib import Path
+
+from datasets import load_dataset
+from openai import OpenAI
+
+
+OUTPUT_REQUIREMENTS = """
+You can reason step by step before giving the final answer. The final answer should be enclosed by <answer> and </answer>.
+
+Example:
+Step 1. ...
+Step 2. ...
+...
+<answer>1.00</answer>
+"""
+
+dataset = load_dataset("InternScience/SGI-DeepResearch", split="test")
+row = dataset[0]
+prompt = row["question"] + OUTPUT_REQUIREMENTS
+
+workspace = Path("./workspace/sgi_deepresearch_example").resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
+response = client.chat.completions.create(
+    model="RH",
+    messages=[{"role": "user", "content": prompt}],
+    extra_body={"workspace-root": str(workspace)},
+)
+
+print(response.choices[0].message.content)
+```
+
 ## Rationale
 
 - The benchmark evaluates both the reasoning process and the final answer.

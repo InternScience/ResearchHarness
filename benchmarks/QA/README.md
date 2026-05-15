@@ -4,26 +4,41 @@ This directory documents the lightweight ResearchHarness contract for
 question-answering benchmarks, including plain-text QA and multimodal VQA-style
 tasks.
 
-The recommended integration is the OpenAI-compatible synchronous API server:
+## Recommended Server Command
+
+For ordinary QA/VQA benchmark runs, start the OpenAI-compatible synchronous API
+server with the QA benchmark role overlay and no wrappers:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/run_server.py \
-  --api-runs-dir ./api_runs
+  --api-runs-dir ./api_runs \
+  --host 127.0.0.1 \
+  --port 8686 \
+  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/QA/role_prompt.md \
+  --no-input-wrapper \
+  --no-output-wrapper
 ```
 
 For large benchmark batches, raise `--max-concurrent-runs` when local resources
 and backend API quota allow more simultaneous agent runs.
 
-For QA/VQA benchmark runs, the benchmark role overlay and both wrappers are
-recommended:
+For strict-format QA benchmarks, wrapper passes are optional and should be
+enabled only when they match the benchmark contract:
 
 ```bash
 python3 /abs/path/to/ResearchHarness/run_server.py \
   --api-runs-dir ./api_runs \
+  --host 127.0.0.1 \
+  --port 8686 \
   --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/QA/role_prompt.md \
   --input-wrapper \
   --output-wrapper
 ```
+
+In practice, `--output-wrapper` is often more useful than `--input-wrapper`
+because it can format the final answer without rewriting the original question.
+Use `--input-wrapper` only when input normalization is known to be safe for the
+benchmark.
 
 By default, each request creates a fresh run directory:
 
@@ -39,18 +54,26 @@ By default, each request creates a fresh run directory:
         └── _session_state.json
 ```
 
+## OpenAI Test Example
+
 Benchmark runners may pass `workspace-root` in the OpenAI request body when a
 case should run inside an already prepared workspace:
 
 ```python
+from pathlib import Path
+
 from openai import OpenAI
+
+
+workspace = Path("./workspace/qa_example").resolve()
+workspace.mkdir(parents=True, exist_ok=True)
 
 client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
 
 response = client.chat.completions.create(
     model="RH",
     messages=[{"role": "user", "content": "Answer the question."}],
-    extra_body={"workspace-root": "/abs/path/to/existing/workspace"},
+    extra_body={"workspace-root": str(workspace)},
 )
 
 print(response.choices[0].message.content)
@@ -69,10 +92,9 @@ mode:
 - `--input-wrapper` / `--no-input-wrapper` controls the input normalization pass.
 - `--output-wrapper` / `--no-output-wrapper` controls the final answer formatting pass.
 
-Strict-format benchmarks are recommended to enable both wrappers, as shown
-above. To return the agent's direct final text, use the default deployment
-command without wrapper flags. Advanced deployments can manually combine role
-prompts and wrapper flags as needed.
+To return the agent's direct final text, use the default QA deployment command
+without wrapper flags. Advanced deployments can manually combine role prompts
+and wrapper flags as needed.
 
 External benchmark runners can then use the regular OpenAI SDK with:
 
@@ -130,8 +152,7 @@ files may support the run, but the response should not only say to consult
 
 - The endpoint is synchronous and returns one final text answer.
 - Each request gets a separate workspace subdirectory.
-- QA benchmark mode is recommended to use an input wrapper, the ResearchHarness
-  agent, and an output wrapper so strict benchmark output formats do not
-  destabilize the agent loop.
+- QA benchmark mode can use the ResearchHarness agent directly, or optionally
+  add input/output wrappers when the benchmark contract benefits from them.
 - Streaming, async run status, artifact download, and remote image fetching are
   intentionally out of scope for this minimal QA contract.

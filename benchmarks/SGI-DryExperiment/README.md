@@ -18,6 +18,57 @@ python3 /abs/path/to/ResearchHarness/run_server.py \
   --no-output-wrapper
 ```
 
+## OpenAI Test Example
+
+The example below uses the first real `SGI-DryExperiment` test item and appends
+the same function-completion output requirement used by the official SGI-Bench
+evaluation script.
+
+```python
+from pathlib import Path
+
+from datasets import load_dataset
+from openai import OpenAI
+
+
+OUTPUT_REQUIREMENTS = """
+Output the completed function enclosed within <answer> and </answer> tags.
+
+Example 1:
+<answer>
+def hello():
+    print("Hello")
+</answer>
+
+Example 2:
+<answer>
+def add(a, b):
+    return a+b
+
+def minus(a, b):
+    return a-b
+</answer>
+
+"""
+
+dataset = load_dataset("InternScience/SGI-DryExperiment", split="test")
+row = dataset[0]
+prompt = row["question"] + OUTPUT_REQUIREMENTS
+
+workspace = Path("./workspace/sgi_dryexperiment_example").resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
+response = client.chat.completions.create(
+    model="RH",
+    messages=[{"role": "user", "content": prompt}],
+    extra_body={"workspace-root": str(workspace)},
+)
+
+print(response.choices[0].message.content)
+```
+
 ## Rationale
 
 - The dataset prompt already contains the full code context and function names.
