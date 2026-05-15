@@ -25,6 +25,42 @@ entrypoint.
 }
 ```
 
+## API Server Deployment
+
+ResearchHarness can also be exposed through its OpenAI-compatible API server
+and called by a benchmark runner. Start the server with the ResearchClawBench
+role prompt:
+
+```bash
+python3 /abs/path/to/ResearchHarness/run_server.py \
+  --api-runs-dir ./api_runs \
+  --host 127.0.0.1 \
+  --port 8686 \
+  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/ResearchClawBench/role_prompt.md
+```
+
+Then send each RCB case through the OpenAI SDK and pass the prepared RCB
+workspace as `workspace-root`:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(api_key="unused", base_url="http://127.0.0.1:8686/v1")
+
+response = client.chat.completions.create(
+    model="RH",
+    messages=[{"role": "user", "content": rcb_prompt}],
+    extra_body={"workspace-root": "/abs/path/to/rcb/workspace"},
+)
+
+print(response.choices[0].message.content)
+```
+
+Use `RH--<llm-model-name>` instead of `RH` when the request should override the
+server's default backend model. The API server keeps `agent_trace/` under
+`--api-runs-dir/run_.../`, while the agent works inside the supplied
+`workspace-root`.
+
 ## Why This Shape
 
 - [ResearchClawBench](https://github.com/InternScience/ResearchClawBench)

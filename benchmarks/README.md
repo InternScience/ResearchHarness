@@ -8,6 +8,8 @@ fair across different evaluations.
 | --- | --- | --- |
 | [ResearchClawBench](https://github.com/InternScience/ResearchClawBench) | `benchmarks/ResearchClawBench/` | `README.md` + `role_prompt.md` + `adapter.py` |
 | QA / VQA-style benchmarks | `benchmarks/QA/` | `README.md` + `role_prompt.md` |
+| [SGI-DryExperiment](https://huggingface.co/datasets/InternScience/SGI-DryExperiment) | `benchmarks/SGI-DryExperiment/` | `README.md` + `role_prompt.md` |
+| [SGI-WetExperiment](https://huggingface.co/datasets/InternScience/SGI-WetExperiment) | `benchmarks/SGI-WetExperiment/` | `README.md` + `role_prompt.md` |
 
 ## Notes
 

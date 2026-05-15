@@ -1,0 +1,66 @@
+# SGI-WetExperiment
+
+This directory contains the ResearchHarness benchmark role overlay for
+[SGI-WetExperiment](https://huggingface.co/datasets/InternScience/SGI-WetExperiment).
+
+SGI-WetExperiment is a strict experimental-process formatting benchmark. It is
+not a generic QA/VQA task, so the generic QA wrappers are not recommended.
+
+## Recommended Server Command
+
+```bash
+python3 /abs/path/to/ResearchHarness/run_server.py \
+  --api-runs-dir ./api_runs \
+  --host 127.0.0.1 \
+  --port 8686 \
+  --role-prompt-file /abs/path/to/ResearchHarness/benchmarks/SGI-WetExperiment/role_prompt.md \
+  --no-input-wrapper \
+  --no-output-wrapper
+```
+
+## Rationale
+
+- The scorer expects a strict action-call text format.
+- Output rewriting can collapse required multi-line calls into one-line calls.
+- Input rewriting can lose action-pool entries or move them away from the model
+  context.
+- The benchmark-specific role prompt should guide the agent to draft, validate,
+  and return the final action sequence directly.
+
+## Local Format Validator
+
+The role prompt asks the agent to validate against the same broad shape used by
+the benchmark parser:
+
+```python
+import re
+
+
+def parse_experiment_steps(text):
+    step_pattern = r'(\w+)\s*=\s*<([^>]+)>\(\s*([\s\S]*?)(?=\n\s*\)\s*$)'
+    param_pattern = r'^\s*(\w+)\s*=\s*(.*?)\s*(?:,)?\s*$'
+    steps = []
+
+    for match in re.finditer(step_pattern, text, re.MULTILINE):
+        output_var = match.group(1).strip()
+        action_name = match.group(2).strip()
+        params = match.group(3).strip()
+
+        param_dict = {}
+        param_lines = [line.strip() for line in params.split('\n') if line.strip() and line.strip() != ')']
+        for line in param_lines:
+            param_match = re.match(param_pattern, line)
+            if param_match:
+                key = param_match.group(1)
+                value = param_match.group(2).strip()
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                param_dict[key] = value
+
+        steps.append({"action": action_name, "input": param_dict, "output": output_var})
+
+    return steps
+```
+
+This validator is documentation for the expected output shape. The actual
+benchmark runner remains responsible for scoring.
