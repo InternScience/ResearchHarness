@@ -85,6 +85,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-05-19) `WebFetch` now exposes a single-string `url` schema for broader provider compatibility, including Gemini tool declarations. Fetch multiple pages with multiple `WebFetch` calls.
+
 🚩 **Update** (2026-05-14) ResearchHarness now supports optional extra tools that are not loaded into the default tool set. The first one is `str_replace_editor`, a text editing compatibility tool enabled explicitly with `--extra-tool str_replace_editor`.
 
 🚩 **Update** (2026-05-14) `WebFetch` no longer performs a hidden LLM summarization pass. It now uses a URL-only interface plus optional `start_line`, `end_line`, and `max_chars` controls, returning cleaned, range-bounded webpage text for direct agent inspection.

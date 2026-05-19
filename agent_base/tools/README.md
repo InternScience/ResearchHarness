@@ -336,7 +336,7 @@ Purpose:
 
 Arguments:
 
-- `url`: string or array of strings, page URL or URLs
+- `url`: string, page URL
 - `start_line`: optional integer, 1-based start line, defaults to `1`
 - `end_line`: optional integer, 1-based end line
 - `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `30000`
@@ -344,6 +344,7 @@ Arguments:
 Behavior:
 
 - Fetches page text through Jina Reader.
+- Use multiple WebFetch calls when you need to inspect multiple URLs.
 - Applies simple deterministic cleanup to whitespace and blank lines.
 - Applies the requested line range and per-call character limit.
 - Does not call an LLM inside the tool; the main agent is responsible for reading, reasoning over, and summarizing the returned content.

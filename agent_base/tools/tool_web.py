@@ -280,12 +280,8 @@ class WebFetch(ToolBase):
         "type": "object",
         "properties": {
             "url": {
-                "type": ["string", "array"],
-                "items": {
-                    "type": "string",
-                },
-                "minItems": 1,
-                "description": "The URL(s) of the webpage(s) to visit. Can be a single URL or an array of URLs.",
+                "type": "string",
+                "description": "The URL of the webpage to visit. Call WebFetch multiple times for multiple URLs.",
             },
             "start_line": {
                 "type": "integer",
@@ -378,33 +374,13 @@ class WebFetch(ToolBase):
         except ValueError as exc:
             return f"[WebFetch] {exc}"
 
-        if isinstance(url, str):
-            response = self.readpage_jina(
-                url,
-                start_line=start_line,
-                end_line=end_line,
-                max_chars=max_chars,
-                runtime_deadline=runtime_deadline,
-            )
-        elif isinstance(url, list):
-            response = []
-            for one_url in url:
-                remaining = self._remaining_budget_seconds(runtime_deadline)
-                if remaining is not None and remaining <= 0:
-                    cur_response = "[WebFetch] Failed to read page: agent runtime limit reached."
-                    response.append(cur_response)
-                    continue
-                cur_response = self.readpage_jina(
-                    one_url,
-                    start_line=start_line,
-                    end_line=end_line,
-                    max_chars=max_chars,
-                    runtime_deadline=runtime_deadline,
-                )
-                response.append(cur_response)
-            response = "\n=======\n".join(response)
-        else:
-            return "[WebFetch] 'url' must be a string or a list of strings."
+        response = self.readpage_jina(
+            url,
+            start_line=start_line,
+            end_line=end_line,
+            max_chars=max_chars,
+            runtime_deadline=runtime_deadline,
+        )
 
         if visit_debug_enabled():
             print(f"WebFetch Length {len(response)}")

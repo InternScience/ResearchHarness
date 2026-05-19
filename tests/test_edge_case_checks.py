@@ -1740,14 +1740,6 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
         start_line_result = fetch.call({"url": "https://example.com", "start_line": 0})
         end_line_result = fetch.call({"url": "https://example.com", "start_line": 3, "end_line": 2})
         max_chars_zero_result = fetch.call({"url": "https://example.com", "max_chars": 0})
-        list_result = fetch.call(
-            {
-                "url": ["https://example.com/a", "https://example.com/b"],
-                "start_line": 1,
-                "end_line": 1,
-                "max_chars": 20,
-            }
-        )
     finally:
         if old_timeout is None:
             os.environ.pop("WEBFETCH_TIMEOUT_SECONDS", None)
@@ -1768,8 +1760,8 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
             "start_line_result": start_line_result,
             "end_line_result": end_line_result,
             "max_chars_zero_result": max_chars_zero_result,
-            "list_result": list_result,
             "fetched_urls": fetched_urls,
+            "webfetch_url_schema": WebFetch.parameters["properties"]["url"],
         },
         ensure_ascii=False,
         indent=2,
@@ -1786,15 +1778,15 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
         and not hasattr(fetch, "call_server")
         and "goal" not in WebFetch.parameters["properties"]
         and WebFetch.parameters["required"] == ["url"]
+        and WebFetch.parameters["properties"]["url"].get("type") == "string"
+        and "items" not in WebFetch.parameters["properties"]["url"]
         and "max_chars must be <= WEBFETCH_MAX_CHARS (20)" in oversized_result
         and "Missing required parameter: url" in missing_url_result
-        and "Parameter 'url' must be of type string or array" in invalid_url_result
+        and "Parameter 'url' must be of type string" in invalid_url_result
         and "start_line must be >= 1" in start_line_result
         and "end_line must be >= start_line" in end_line_result
         and "max_chars must be > 0" in max_chars_zero_result
-        and list_result.count("source_type: web") == 2
-        and "=======\nurl: https://example.com/b" in list_result
-        and fetched_urls == ["https://example.com", "https://example.com/a", "https://example.com/b"]
+        and fetched_urls == ["https://example.com"]
     )
     return ok, detail
 
@@ -1854,6 +1846,55 @@ def check_session_state_is_only_written_with_trace_dir() -> tuple[bool, str]:
     return ok, detail
 
 
+def check_tool_schemas_avoid_provider_incompatible_mixed_types() -> tuple[bool, str]:
+    from agent_base.react_agent import ALL_TOOL_MAP
+
+    issues: list[dict[str, object]] = []
+
+    def walk(tool_name: str, path: list[str], value: object) -> None:
+        if isinstance(value, dict):
+            schema_type = value.get("type")
+            if isinstance(schema_type, list):
+                issues.append(
+                    {
+                        "tool": tool_name,
+                        "path": ".".join(path),
+                        "issue": "type-list",
+                        "schema_type": schema_type,
+                    }
+                )
+            if "items" in value and schema_type != "array":
+                issues.append(
+                    {
+                        "tool": tool_name,
+                        "path": ".".join(path),
+                        "issue": "items-on-non-array",
+                        "schema_type": schema_type,
+                    }
+                )
+            for keyword in ("anyOf", "oneOf", "allOf"):
+                if keyword in value:
+                    issues.append(
+                        {
+                            "tool": tool_name,
+                            "path": ".".join(path),
+                            "issue": keyword,
+                            "schema_type": schema_type,
+                        }
+                    )
+            for key, child in value.items():
+                walk(tool_name, path + [str(key)], child)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                walk(tool_name, path + [str(index)], child)
+
+    for tool_name, tool in ALL_TOOL_MAP.items():
+        walk(tool_name, ["parameters"], getattr(tool, "parameters", {}))
+
+    detail = json.dumps({"issues": issues}, ensure_ascii=False, indent=2)
+    return not issues, detail
+
+
 def main() -> int:
     bootstrap()
     TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -1882,6 +1923,7 @@ def main() -> int:
         ("Terminal error accepts artifact", check_terminal_error_can_be_accepted_after_completion_artifact),
         ("Claude runtime sampling params", check_claude_models_skip_sampling_params_in_agent_runtime),
         ("WebFetch range-bounded page text", check_webfetch_returns_range_bounded_page_text_without_summary_llm),
+        ("Tool schema provider compatibility", check_tool_schemas_avoid_provider_incompatible_mixed_types),
         ("Plaintext result max rounds", check_plaintext_result_rejection_hits_max_rounds),
         ("Bash output bounding", check_bash_output_bounding_and_repeat_collapse),
     ]
