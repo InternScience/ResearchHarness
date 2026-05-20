@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import json
 import os
@@ -79,6 +80,18 @@ DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
 DEFAULT_PRESENCE_PENALTY = 1.1
 DEFAULT_LLM_TIMEOUT_SECONDS = 600.0
+MAX_PARALLEL_READ_TOOL_CALLS = 3
+PARALLEL_READ_TOOL_NAMES = frozenset(
+    {
+        "Glob",
+        "Grep",
+        "Read",
+        "ReadImage",
+        "WebSearch",
+        "ScholarSearch",
+        "WebFetch",
+    }
+)
 
 
 def default_model_name() -> str:
@@ -611,6 +624,26 @@ def execute_tool_by_name(tool_map: dict[str, Any], tool_name: str, tool_args: An
     if tool_name == "ReadImage" and hasattr(tool, "call_for_llm"):
         return tool.call_for_llm(tool_args, **kwargs)
     return tool.call(tool_args, **kwargs)
+
+
+def can_parallelize_tool_name(tool_name: str) -> bool:
+    return tool_name in PARALLEL_READ_TOOL_NAMES
+
+
+def tool_execution_batches(tool_names: Sequence[str]) -> list[list[int]]:
+    batches: list[list[int]] = []
+    read_batch: list[int] = []
+    for index, tool_name in enumerate(tool_names):
+        if can_parallelize_tool_name(tool_name):
+            read_batch.append(index)
+            continue
+        if read_batch:
+            batches.append(read_batch)
+            read_batch = []
+        batches.append([index])
+    if read_batch:
+        batches.append(read_batch)
+    return batches
 
 
 class MultiTurnReactAgent(BaseAgent):
@@ -1216,38 +1249,64 @@ class MultiTurnReactAgent(BaseAgent):
                 tool_turn_message_start = len(messages)
                 messages.append(assistant_message)
                 deferred_image_contexts: list[tuple[str, str, Any, Any, dict[str, Any]]] = []
+                tool_call_items: list[dict[str, Any]] = []
                 for tool_call, tool_arguments in zip(assistant_tool_calls, assistant_tool_arguments):
+                    function_block = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                    tool_call_items.append(
+                        {
+                            "tool_call_id": str(tool_call.get("id", "")),
+                            "tool_name": str(function_block.get("name", "")),
+                            "tool_arguments": tool_arguments,
+                        }
+                    )
+
+                def execute_tool_item(item: dict[str, Any]) -> tuple[dict[str, Any], Any]:
+                    result = self.custom_call_tool(
+                        str(item["tool_name"]),
+                        item["tool_arguments"],
+                        workspace_root=resolved_workspace_root,
+                        runtime_deadline=runtime_deadline,
+                        model_name=self.model,
+                    )
+                    return item, result
+
+                for batch_indexes in tool_execution_batches([str(item["tool_name"]) for item in tool_call_items]):
                     if remaining_runtime_seconds(runtime_deadline) is not None and remaining_runtime_seconds(runtime_deadline) <= 0:
                         result_text = "No result found before the maximum agent runtime limit."
                         termination = f"agent runtime limit reached: {agent_runtime_limit}s"
                         return finalize(result_text, termination, error=termination)
-                    tool_call_id = str(tool_call.get("id", ""))
-                    function_block = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
-                    tool_name = str(function_block.get("name", ""))
+                    batch_items = [tool_call_items[index] for index in batch_indexes]
                     try:
-                        result = self.custom_call_tool(
-                            tool_name,
-                            tool_arguments,
-                            workspace_root=resolved_workspace_root,
-                            runtime_deadline=runtime_deadline,
-                            model_name=self.model,
+                        should_run_parallel = len(batch_items) > 1 and all(
+                            can_parallelize_tool_name(str(item["tool_name"])) for item in batch_items
                         )
+                        if should_run_parallel:
+                            max_workers = min(MAX_PARALLEL_READ_TOOL_CALLS, len(batch_items))
+                            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                                batch_results = list(executor.map(execute_tool_item, batch_items))
+                        else:
+                            batch_results = [execute_tool_item(item) for item in batch_items]
                     except KeyboardInterrupt:
                         messages = messages[:tool_turn_message_start]
                         return finalize_interrupted()
-                    tool_result_text = tool_result_message_content(result)
-                    messages.append(api_tool_message(tool_call_id, result))
-                    trace_writer.append(
-                        role="tool",
-                        text=tool_result_text,
-                        turn_index=round_index,
-                        tool_call_ids=[tool_call_id],
-                        tool_names=[tool_name],
-                        tool_arguments=[tool_arguments],
-                    )
-                    extra_image_context = image_context_message(result, self.model)
-                    if extra_image_context is not None:
-                        deferred_image_contexts.append((tool_call_id, tool_name, tool_arguments, result, extra_image_context))
+
+                    for item, result in batch_results:
+                        tool_call_id = str(item["tool_call_id"])
+                        tool_name = str(item["tool_name"])
+                        tool_arguments = item["tool_arguments"]
+                        tool_result_text = tool_result_message_content(result)
+                        messages.append(api_tool_message(tool_call_id, result))
+                        trace_writer.append(
+                            role="tool",
+                            text=tool_result_text,
+                            turn_index=round_index,
+                            tool_call_ids=[tool_call_id],
+                            tool_names=[tool_name],
+                            tool_arguments=[tool_arguments],
+                        )
+                        extra_image_context = image_context_message(result, self.model)
+                        if extra_image_context is not None:
+                            deferred_image_contexts.append((tool_call_id, tool_name, tool_arguments, result, extra_image_context))
                 for tool_call_id, tool_name, tool_arguments, result, extra_image_context in deferred_image_contexts:
                     messages.append(extra_image_context)
                     trace_writer.append(

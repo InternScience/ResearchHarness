@@ -100,19 +100,19 @@ def main() -> int:
     artifacts["Bash"] = python_output
 
     scholar_tool = ScholarSearch()
-    scholar_output = scholar_tool.call({"query": ["Attention Is All You Need publication year"]})
+    scholar_output = scholar_tool.call({"query": "Attention Is All You Need publication year"})
     tools_called.append("ScholarSearch")
     artifacts["ScholarSearch"] = scholar_output
 
     search_tool = WebSearch()
-    search_output = search_tool.call({"query": ["Attention Is All You Need authors list"]})
+    search_output = search_tool.call({"query": "Attention Is All You Need authors list"})
     tools_called.append("WebSearch")
     artifacts["WebSearch"] = search_output
 
     visit_tool = WebFetch()
     visit_output = visit_tool.call(
         {
-            "url": [EXPECTED_VISITED_URL],
+            "url": EXPECTED_VISITED_URL,
         }
     )
     tools_called.append("WebFetch")

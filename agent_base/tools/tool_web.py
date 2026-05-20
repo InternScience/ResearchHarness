@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Union
 
 import requests
@@ -61,17 +60,13 @@ def _clean_webpage_text(text: str) -> str:
 
 class WebSearch(ToolBase):
     name = "WebSearch"
-    description = "Perform Google web searches and return the top results. Accepts multiple complementary queries."
+    description = "Perform one Google web search and return the top results. Call WebSearch multiple times for multiple queries."
     parameters = {
         "type": "object",
         "properties": {
             "query": {
-                "type": "array",
-                "items": {
-                    "type": "string",
-                },
-                "minItems": 1,
-                "description": "Array of query strings. Include multiple complementary search queries in a single call.",
+                "type": "string",
+                "description": "The search query.",
             },
         },
         "required": ["query"],
@@ -166,27 +161,21 @@ class WebSearch(ToolBase):
         except ValueError as exc:
             return f"[WebSearch] {exc}"
 
-        if isinstance(query, list):
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                responses = list(executor.map(self.search_with_serp, query))
-            response = "\n=======\n".join(responses)
-        else:
-            return "[WebSearch] 'query' must be a list of strings."
+        if not isinstance(query, str) or not query.strip():
+            return "[WebSearch] 'query' must be a non-empty string."
 
-        return response
+        return self.search_with_serp(query.strip())
 
 
 class ScholarSearch(ToolBase):
     name = "ScholarSearch"
-    description = "Search academic sources through Google Scholar and return relevant publication results."
+    description = "Run one academic search through Google Scholar and return relevant publication results. Call ScholarSearch multiple times for multiple queries."
     parameters = {
         "type": "object",
         "properties": {
             "query": {
-                "type": "array",
-                "items": {"type": "string", "description": "The search query."},
-                "minItems": 1,
-                "description": "The list of search queries for Google Scholar.",
+                "type": "string",
+                "description": "The search query for Google Scholar.",
             },
         },
         "required": ["query"],
@@ -264,13 +253,9 @@ class ScholarSearch(ToolBase):
         except ValueError as exc:
             return f"[ScholarSearch] {exc}"
 
-        if isinstance(query, list):
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                response = list(executor.map(self.google_scholar_with_serp, query))
-            response = "\n=======\n".join(response)
-        else:
-            return "[ScholarSearch] 'query' must be a list of strings."
-        return response
+        if not isinstance(query, str) or not query.strip():
+            return "[ScholarSearch] 'query' must be a non-empty string."
+        return self.google_scholar_with_serp(query.strip())
 
 
 class WebFetch(ToolBase):
@@ -475,9 +460,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     load_dotenv(PROJECT_ROOT / ".env")
 
     if args.tool == "search":
-        result = WebSearch().call({"query": [" ".join(args.query)]})
+        result = WebSearch().call({"query": " ".join(args.query)})
     elif args.tool == "scholar":
-        result = ScholarSearch().call({"query": [" ".join(args.query)]})
+        result = ScholarSearch().call({"query": " ".join(args.query)})
     else:
         result = WebFetch().call(
             {

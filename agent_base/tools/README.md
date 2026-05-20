@@ -36,6 +36,56 @@ Optional extra tools are not loaded by default. Enable them explicitly with `--e
 
 - `str_replace_editor`
 
+## Execution Semantics
+
+Each tool call should represent one clear request.
+
+Examples:
+
+- `WebSearch.query`: one search query string
+- `ScholarSearch.query`: one scholarly search query string
+- `WebFetch.url`: one page URL string
+- `Read.path`: one local file path
+
+Do not pack multiple searches, URLs, or file paths into one tool argument.
+Instead, issue multiple independent tool calls in the same assistant turn.
+
+For efficiency, the runtime executes adjacent read-only tool calls concurrently,
+with a default maximum of three calls per parallel block. Tool result messages
+and trace events are still written back in the original model-emitted order.
+
+Current read-only calls eligible for this parallel execution are:
+
+- `Glob`
+- `Grep`
+- `Read`
+- `ReadImage`
+- `WebSearch`
+- `ScholarSearch`
+- `WebFetch`
+
+Tools with mutation, shell, terminal, external parsing, or human-interaction
+semantics are not parallelized by default. This includes `Write`, `Edit`,
+`Bash`, `ReadPDF`, `AskUser`, `Terminal*`, and optional editing tools such as
+`str_replace_editor`.
+
+Example execution plan:
+
+```text
+Read, Read, Edit, Read
+```
+
+is executed as:
+
+```text
+[Read + Read]  concurrent
+[Edit]         sequential
+[Read]         sequential after Edit
+```
+
+This preserves the dependency boundary around `Edit`: the final `Read` cannot
+run before the edit has completed.
+
 ## Tool Matrix
 
 | Tool | Category | Arguments | Description | Return Shape / Notes |
@@ -48,8 +98,8 @@ Optional extra tools are not loaded by default. Enable them explicitly with `--e
 | `Write` | Local files | `path`, `content`, `overwrite?` | Create a text file or overwrite one when explicitly allowed. | Creates parent directories automatically. Returns an error if the file exists and `overwrite=false`. |
 | `Edit` | Local files | `path`, `patch` | Apply a targeted patch to a local text file. | Expects unified-diff / hunk-style input. Context-based matching, not a full `patch(1)` implementation. |
 | `Bash` | Runtime | `command`, `timeout?`, `workdir?` | Run one-shot shell commands for deterministic local execution, parsing, and validation. | Returns `stdout` and `stderr`. Primary local execution tool for short Python, `rg`, `find`, `git`, and structured local processing. |
-| `WebSearch` | Web | `query` | Perform general web search over one or more complementary queries. | Returns a text summary headed by `## Web Results` with title, link, snippet, and date/source when available. Uses Serper. |
-| `ScholarSearch` | Web | `query` | Search academic results such as papers, year, abstract, and citations. | Returns a text summary headed by `## Scholar Results` with title, PDF link, publication info, year, citation count, and abstract. Uses Serper Scholar. |
+| `WebSearch` | Web | `query` | Perform one general web search. Call it multiple times in one assistant turn for multiple queries. | Returns a text summary headed by `## Web Results` with title, link, snippet, and date/source when available. Uses Serper. |
+| `ScholarSearch` | Web | `query` | Perform one academic search for papers, year, abstract, and citations. Call it multiple times in one assistant turn for multiple queries. | Returns a text summary headed by `## Scholar Results` with title, PDF link, publication info, year, citation count, and abstract. Uses Serper Scholar. |
 | `WebFetch` | Web | `url`, `start_line?`, `end_line?`, `max_chars?` | Fetch a page and return cleaned, range-bounded webpage text. | Uses Jina Reader only. Returns metadata plus page content so the main agent can inspect and summarize the evidence itself. |
 | `AskUser` | Human interaction | `question`, `context?` | Ask the human user one concise clarification question when essential information cannot be determined from tools or existing instructions. | Writes the question to the interactive terminal and returns the user's answer. If no interactive terminal is available, returns an explicit unavailable message. |
 | `TerminalStart` | Runtime | `cwd?`, `shell?`, `rows?`, `cols?` | Start a persistent terminal session. | Returns session metadata such as `session_id`, `pid`, `cwd`, `shell`, `alive`, and `returncode`. |
@@ -287,11 +337,12 @@ Recommended use cases:
 Purpose:
 
 - General web search.
-- Supports passing multiple complementary queries in one call.
+- Handles one query per tool call.
+- For multiple complementary queries, issue multiple `WebSearch` tool calls in the same assistant turn.
 
 Arguments:
 
-- `query`: array of strings, at least one query
+- `query`: string, one search query
 
 Behavior:
 
@@ -310,10 +361,12 @@ Purpose:
 
 - Academic search.
 - Return paper title, year, abstract, citation count, and related metadata.
+- Handles one query per tool call.
+- For multiple complementary queries, issue multiple `ScholarSearch` tool calls in the same assistant turn.
 
 Arguments:
 
-- `query`: array of strings, at least one query
+- `query`: string, one academic search query
 
 Behavior:
 

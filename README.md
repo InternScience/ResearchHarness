@@ -85,6 +85,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
+
 🚩 **Update** (2026-05-19) `WebFetch` now exposes a single-string `url` schema for broader provider compatibility, including Gemini tool declarations. Fetch multiple pages with multiple `WebFetch` calls.
 
 🚩 **Update** (2026-05-14) ResearchHarness now supports optional extra tools that are not loaded into the default tool set. The first one is `str_replace_editor`, a text editing compatibility tool enabled explicitly with `--extra-tool str_replace_editor`.
@@ -925,6 +927,30 @@ repository for local images.
 ## 🛠 Tool Surface
 
 More detailed tool documentation lives in [agent_base/tools/README.md](agent_base/tools/README.md).
+
+Tool calls follow a single-request contract: `WebSearch.query`,
+`ScholarSearch.query`, and `WebFetch.url` each accept one string, not a list.
+When the model needs multiple independent searches, page fetches, file reads,
+or image reads, it should issue multiple tool calls in the same assistant turn.
+The runtime then executes adjacent read-only calls concurrently, up to three at
+a time, while preserving the original tool-result order.
+
+Mutation and stateful tools cut the parallel block. For example:
+
+```text
+Read, Read, Edit, Read
+```
+
+executes as:
+
+```text
+[Read + Read]  concurrent
+[Edit]         sequential
+[Read]         sequential after Edit
+```
+
+This keeps efficient retrieval without moving reads across writes, edits,
+shell commands, terminal interactions, or human clarification.
 
 | Category | Tools | Typical use |
 | --- | --- | --- |

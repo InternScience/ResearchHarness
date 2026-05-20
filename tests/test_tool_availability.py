@@ -79,7 +79,7 @@ def test_search() -> ToolTestResult:
     from agent_base.tools.tool_web import WebSearch
 
     tool = WebSearch()
-    result, stdout, stderr = call_with_capture(tool.call, {"query": ["OpenAI"]})
+    result, stdout, stderr = call_with_capture(tool.call, {"query": "OpenAI"})
     text = str(result)
     if "## Web Results" not in text or "Timeout" in text or "Invalid request format" in text:
         return make_result("WebSearch", "FAIL", started_at, "Unexpected search response.", text, stdout, stderr)
@@ -91,7 +91,7 @@ def test_google_scholar() -> ToolTestResult:
     from agent_base.tools.tool_web import ScholarSearch
 
     tool = ScholarSearch()
-    result, stdout, stderr = call_with_capture(tool.call, {"query": ["Attention Is All You Need"]})
+    result, stdout, stderr = call_with_capture(tool.call, {"query": "Attention Is All You Need"})
     text = str(result)
     if "## Scholar Results" not in text or "Timeout" in text or "Invalid request format" in text:
         return make_result("ScholarSearch", "FAIL", started_at, "Unexpected ScholarSearch response.", text, stdout, stderr)
@@ -106,7 +106,7 @@ def test_visit() -> ToolTestResult:
     result, stdout, stderr = call_with_capture(
         tool.call,
         {
-            "url": [DEFAULT_VISIT_URL],
+            "url": DEFAULT_VISIT_URL,
         },
     )
     text = str(result)

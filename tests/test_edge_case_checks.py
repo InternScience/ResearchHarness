@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 import types
 from dataclasses import asdict, dataclass
@@ -267,6 +268,8 @@ def check_parallel_readimage_tool_message_order() -> tuple[bool, str]:
             )
             self._turn = 0
             self.seen_messages = []
+            self.events: dict[str, dict[str, float]] = {}
+            self.event_lock = threading.Lock()
 
         def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
             self.seen_messages = msgs
@@ -312,6 +315,11 @@ def check_parallel_readimage_tool_message_order() -> tuple[bool, str]:
 
         def custom_call_tool(self, tool_name: str, tool_args: object, **kwargs):
             path = tool_args["path"] if isinstance(tool_args, dict) else "unknown"
+            started = time.monotonic()
+            time.sleep(0.1)
+            ended = time.monotonic()
+            with self.event_lock:
+                self.events[path] = {"started": started, "ended": ended}
             return {
                 "kind": "image_tool_result",
                 "text": f"path: {path}\nllm_image_attached: true",
@@ -322,11 +330,15 @@ def check_parallel_readimage_tool_message_order() -> tuple[bool, str]:
     agent = FakeAgent()
     session = agent._run_session("inspect three images", workspace_root=str(case_dir))
     roles_after_assistant = [msg.get("role") for msg in agent.seen_messages[2:]]
+    readimage_calls_overlap = max(event["started"] for event in agent.events.values()) < min(
+        event["ended"] for event in agent.events.values()
+    )
     detail = json.dumps(
         {
             "termination": session.get("termination"),
             "result_text": session.get("result_text"),
             "roles_after_assistant": roles_after_assistant,
+            "readimage_calls_overlap": readimage_calls_overlap,
             "messages_seen": agent.seen_messages,
         },
         ensure_ascii=False,
@@ -337,6 +349,34 @@ def check_parallel_readimage_tool_message_order() -> tuple[bool, str]:
         and session.get("result_text") == "done"
         and roles_after_assistant[:7] == ["assistant", "tool", "tool", "tool", "user", "user", "user"]
         and len(roles_after_assistant) == 7
+        and readimage_calls_overlap
+    )
+    return ok, detail
+
+
+def check_tool_execution_batches_keep_mutation_boundaries() -> tuple[bool, str]:
+    from agent_base.react_agent import can_parallelize_tool_name, tool_execution_batches
+
+    tool_names = ["Read", "Read", "Edit", "Read", "WebSearch", "Bash", "WebFetch", "ScholarSearch"]
+    batches = tool_execution_batches(tool_names)
+    parallelizable = {name: can_parallelize_tool_name(name) for name in tool_names}
+    detail = json.dumps(
+        {
+            "tool_names": tool_names,
+            "batches": batches,
+            "parallelizable": parallelizable,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        batches == [[0, 1], [2], [3, 4], [5], [6, 7]]
+        and parallelizable["Read"]
+        and parallelizable["WebSearch"]
+        and parallelizable["ScholarSearch"]
+        and parallelizable["WebFetch"]
+        and not parallelizable["Edit"]
+        and not parallelizable["Bash"]
     )
     return ok, detail
 
@@ -1706,7 +1746,7 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
 
 
 def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tuple[bool, str]:
-    from agent_base.tools.tool_web import WebFetch
+    from agent_base.tools.tool_web import ScholarSearch, WebFetch, WebSearch
 
     old_timeout = os.environ.get("WEBFETCH_TIMEOUT_SECONDS")
     old_max_chars = os.environ.get("WEBFETCH_MAX_CHARS")
@@ -1740,6 +1780,8 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
         start_line_result = fetch.call({"url": "https://example.com", "start_line": 0})
         end_line_result = fetch.call({"url": "https://example.com", "start_line": 3, "end_line": 2})
         max_chars_zero_result = fetch.call({"url": "https://example.com", "max_chars": 0})
+        search_list_query_result = WebSearch().call({"query": ["OpenAI", "ResearchHarness"]})
+        scholar_list_query_result = ScholarSearch().call({"query": ["Attention Is All You Need"]})
     finally:
         if old_timeout is None:
             os.environ.pop("WEBFETCH_TIMEOUT_SECONDS", None)
@@ -1761,6 +1803,10 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
             "end_line_result": end_line_result,
             "max_chars_zero_result": max_chars_zero_result,
             "fetched_urls": fetched_urls,
+            "search_list_query_result": search_list_query_result,
+            "scholar_list_query_result": scholar_list_query_result,
+            "websearch_query_schema": WebSearch.parameters["properties"]["query"],
+            "scholar_query_schema": ScholarSearch.parameters["properties"]["query"],
             "webfetch_url_schema": WebFetch.parameters["properties"]["url"],
         },
         ensure_ascii=False,
@@ -1777,9 +1823,15 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
         and "Evidence in page:" not in result
         and not hasattr(fetch, "call_server")
         and "goal" not in WebFetch.parameters["properties"]
+        and WebSearch.parameters["properties"]["query"].get("type") == "string"
+        and ScholarSearch.parameters["properties"]["query"].get("type") == "string"
+        and "items" not in WebSearch.parameters["properties"]["query"]
+        and "items" not in ScholarSearch.parameters["properties"]["query"]
         and WebFetch.parameters["required"] == ["url"]
         and WebFetch.parameters["properties"]["url"].get("type") == "string"
         and "items" not in WebFetch.parameters["properties"]["url"]
+        and "Parameter 'query' must be of type string" in search_list_query_result
+        and "Parameter 'query' must be of type string" in scholar_list_query_result
         and "max_chars must be <= WEBFETCH_MAX_CHARS (20)" in oversized_result
         and "Missing required parameter: url" in missing_url_result
         and "Parameter 'url' must be of type string" in invalid_url_result
@@ -1907,6 +1959,7 @@ def main() -> int:
         ("Agent runtime limit", check_agent_runtime_limit_on_tool_execution),
         ("LLM hard timeout", check_llm_hard_timeout_interrupts_blocking_call),
         ("Parallel ReadImage tool order", check_parallel_readimage_tool_message_order),
+        ("Tool execution batches keep mutation boundaries", check_tool_execution_batches_keep_mutation_boundaries),
         ("DeepSeek ReadImage fallback", check_deepseek_readimage_falls_back_to_text_only_context),
         ("Old image parts omitted but traced", check_old_image_parts_are_omitted_from_followup_requests_but_traced),
         ("Reasoning content preserved", check_reasoning_content_is_preserved_across_tool_rounds),
