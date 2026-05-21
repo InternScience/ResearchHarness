@@ -27,12 +27,11 @@ from agent_base.tools.tool_runtime import Bash, TerminalInterrupt, TerminalKill,
 from agent_base.tools.tool_user import AskUser
 from agent_base.tools.tool_web import ScholarSearch, WebFetch, WebSearch
 from agent_base.utils import (
-    PROJECT_ROOT,
     MissingRequiredEnvError,
     append_saved_image_paths_to_prompt,
     env_flag,
     image_input_content_parts,
-    load_dotenv,
+    load_default_dotenvs,
     read_role_prompt_files,
     require_required_env,
     safe_jsonable,
@@ -1494,7 +1493,7 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_default_dotenvs()
     try:
         require_required_env("ResearchHarness agent")
         prompt_text, trace_dir, workspace_root, role_prompt, role_prompt_files, image_paths, chat_arg, extra_tools = _parse_cli_args(argv or sys.argv[1:])

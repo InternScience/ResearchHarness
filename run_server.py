@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from agent_base.utils import PROJECT_ROOT, MissingRequiredEnvError, load_dotenv, require_required_env
+from agent_base.utils import MissingRequiredEnvError, load_default_dotenvs, require_required_env
 from api.openai_server import DEFAULT_MAX_CONCURRENT_RUNS, positive_int, serve
 
 
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_default_dotenvs()
     try:
         require_required_env("ResearchHarness API server")
         serve(

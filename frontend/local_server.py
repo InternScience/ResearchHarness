@@ -26,7 +26,7 @@ from agent_base.utils import (
     PROJECT_ROOT,
     append_saved_image_paths_to_prompt,
     image_input_content_parts,
-    load_dotenv,
+    load_default_dotenvs,
     require_required_env,
     safe_jsonable,
     stage_image_bytes_for_input,
@@ -207,7 +207,7 @@ def _run_agent_thread(
     model_name: str = "",
 ) -> None:
     try:
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_default_dotenvs()
         require_required_env("ResearchHarness frontend")
         agent = FrontendInteractiveAgent(
             bridge=bridge,

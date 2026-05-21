@@ -85,6 +85,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
+
 🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
 
 🚩 **Update** (2026-05-19) `WebFetch` now exposes a single-string `url` schema for broader provider compatibility, including Gemini tool declarations. Fetch multiple pages with multiple `WebFetch` calls.
@@ -262,15 +264,35 @@ Use any Python environment manager you prefer:
 - `uv`
 - system Python
 
-Install dependencies:
+Install from PyPI:
 
 ```bash
-python3 -m pip install -r requirements.txt
+pip install researchharness
+```
+
+Or install from source for development:
+
+```bash
+git clone https://github.com/InternScience/ResearchHarness.git
+cd ResearchHarness
+pip install -r requirements.txt
+pip install -e . --no-deps
+```
+
+The source-tree commands used throughout this README remain available:
+`python3 run_agent.py`, `python3 run_server.py`, and `python3 run_frontend.py`.
+The package also installs equivalent console entry points:
+
+```bash
+rh-agent
+rh-server
+rh-frontend
 ```
 
 ### Configure
 
-Copy `.env.example` to `.env` and fill in all required variables.
+Create a `.env` file in the directory where you run ResearchHarness and fill in all required variables.
+If you are using a source checkout, you can start from `.env.example`.
 
 ResearchHarness currently talks to OpenAI-compatible chat-completions APIs. In
 practice, that means GPT, Gemini, Qwen, GLM, and other model families can be

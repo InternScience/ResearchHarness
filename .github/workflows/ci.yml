@@ -40,10 +40,15 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -e . --no-deps
+
+      - name: Check package import
+        run: python -c "import researchharness; print(researchharness.__version__)"
 
       - name: Compile Python sources
-        run: python -m compileall agent_base api frontend run_agent.py run_frontend.py run_server.py
+        run: python -m compileall agent_base api frontend researchharness run_agent.py run_frontend.py run_server.py
 
       - name: Run edge-case checks
         run: python tests/test_edge_case_checks.py

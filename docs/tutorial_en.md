@@ -59,17 +59,32 @@ inside them are ignored.
 
 ## 1. Install
 
-Clone the repository and install dependencies:
+Install the published package:
 
 ```bash
-python3 -m pip install -r requirements.txt
+pip install researchharness
+```
+
+Or clone the repository for development:
+
+```bash
+git clone https://github.com/InternScience/ResearchHarness.git
+cd ResearchHarness
+pip install -r requirements.txt
+pip install -e . --no-deps
 ```
 
 Python 3.10+ is recommended.
 
+The examples below keep the explicit source-tree entrypoints such as
+`python3 run_agent.py`, `python3 run_server.py`, and `python3 run_frontend.py`.
+These commands remain supported. A PyPI installation also provides the
+equivalent console entrypoints `rh-agent`, `rh-server`, and `rh-frontend`.
+
 ## 2. Configure Environment Variables
 
-Copy `.env.example` to `.env` and fill in the required values.
+Create a `.env` file in the directory where you run ResearchHarness and fill in the required values.
+If you are using a source checkout, you can start from `.env.example`.
 
 Required variables:
 

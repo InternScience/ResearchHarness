@@ -69,6 +69,15 @@ def load_dotenv(path: Union[str, Path]) -> None:
         _DOTENV_LAST_LOADED[marker] = parsed_value
 
 
+def load_default_dotenvs() -> None:
+    """Load dotenv files for both installed and source-tree usage."""
+    cwd_env = Path.cwd() / ".env"
+    project_env = PROJECT_ROOT / ".env"
+    load_dotenv(cwd_env)
+    if cwd_env.resolve() != project_env.resolve():
+        load_dotenv(project_env)
+
+
 def env_flag(name: str) -> bool:
     return os.getenv(name, "").lower() in {"1", "true", "yes", "on"}
 
