@@ -52,6 +52,7 @@ https://github.com/user-attachments/assets/2a5de733-732d-4fa8-8815-ae42d4a780ef
 - [🏗 Project Structure](#-project-structure)
 - [📦 Installation and Configuration](#-installation-and-configuration)
 - [🖥 CLI Usage](#-cli-usage)
+- [🐍 Python API Usage](#-python-api-usage)
 - [🎛 Local Frontend UI](#-local-frontend-ui)
 - [🚀 OpenAI-Compatible API Deployment](#-openai-compatible-api-deployment)
 - [🧠 How It Works](#-how-it-works)
@@ -86,6 +87,8 @@ If you are new to the project, the recommended reading order is:
 ## 📰 News
 
 🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
+
+🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
 
 🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
 
@@ -225,6 +228,7 @@ Start here if you are reading the codebase for the first time.
 ### Tools
 
 - [agent_base/tools/tool_file.py](agent_base/tools/tool_file.py): file, PDF, and image tools
+- [agent_base/tools/custom.py](agent_base/tools/custom.py): Python function tools for embedded usage
 - [agent_base/tools/tool_runtime.py](agent_base/tools/tool_runtime.py): Bash and persistent terminal tools
 - [agent_base/tools/tool_web.py](agent_base/tools/tool_web.py): web search, scholar search, and webpage fetching
 - [agent_base/tools/README.md](agent_base/tools/README.md): detailed tool documentation
@@ -494,6 +498,74 @@ opening trace files:
 - runtime correction messages when a turn is invalid
 
 This makes direct harness runs readable without requiring debug-only logs.
+
+---
+
+## 🐍 Python API Usage
+
+After `pip install researchharness`, the same core controls are available from
+Python:
+
+```python
+from researchharness import Bash, Read, Write, create_agent, tool
+
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+agent = create_agent(
+    workspace_root="./workspace",
+    role_prompt="Answer carefully from evidence.",
+    role_prompt_files=["./benchmarks/QA/role_prompt.md"],
+    tools=[Read, Write, Bash, add_numbers],
+)
+
+answer = agent.run(
+    "Inspect the workspace and write a short summary.",
+    images=["/abs/path/to/image-1.png"],
+)
+```
+
+`workspace_root` is the default agent-visible workspace for later `agent.run(...)`
+calls. A specific run can still override it with `agent.run(prompt,
+workspace_root="./other_workspace")`.
+
+`role_prompt` is for an inline prompt block. `role_prompt_files=[...]` accepts
+one or more files and appends them in order, matching the repeatable CLI
+`--role-prompt-file` behavior.
+
+Tool boundaries are intentionally explicit:
+
+- `tools=None` uses the default ResearchHarness tool set.
+- `tools=[...]` is the complete exposed tool set. Omitting a built-in tool
+  removes it for that agent.
+- Python code should usually pass built-in tool classes such as `Read` and
+  `Bash` so IDE navigation and refactoring keep working.
+- `tools` entries can be built-in tool classes, built-in tool instances,
+  built-in tool names, `ToolBase` instances, or Python functions decorated with
+  `@researchharness.tool`.
+- `extra_tools=[...]` appends optional compatibility tools such as
+  `str_replace_editor` to the default tool set.
+- `tools` and `extra_tools` are separate modes and cannot be passed together.
+
+For one-shot usage:
+
+```python
+from researchharness import run_agent
+
+answer = run_agent(
+    "Summarize this project.",
+    workspace_root="./workspace",
+    role_prompt="Be concise.",
+    images=["/abs/path/to/image-1.png"],
+)
+```
+
+Custom tool functions are validated when the agent is created. Invalid tool
+names, missing descriptions, unsupported type annotations, duplicate names, or
+conflicts with built-in tools fail immediately instead of during a later tool
+call.
 
 ---
 
@@ -981,6 +1053,7 @@ shell commands, terminal interactions, or human clarification.
 | Local execution | `Bash`, `TerminalStart`, `TerminalWrite`, `TerminalRead`, `TerminalInterrupt`, `TerminalKill` | Run one-shot commands or manage persistent terminal sessions for longer local workflows. |
 | Human interaction | `AskUser` | Ask for necessary clarification in interactive runs; benchmark adapters can disable it for non-interactive evaluation. |
 | Optional compatibility | `str_replace_editor` | Not loaded by default. Enable with `--extra-tool str_replace_editor` when an external harness expects that exact editing protocol. |
+| Embedded custom tools | `@researchharness.tool` functions | Python import API only. Pass through `create_agent(tools=[...])` as part of the complete exposed tool set. |
 
 ```mermaid
 mindmap
@@ -1029,6 +1102,7 @@ RESEARCHHARNESS_TEST_PYTHON="/path/to/your/python"
 | Local tool validation | `python3 tests/test_local_tools_validation.py` |
 | Direct toolchain validation | `python3 tests/test_toolchain_validation.py` |
 | Optional extra-tool checks | `python3 tests/test_extra_tools.py` |
+| Python import API and custom-tool checks | `python3 tests/test_python_api_tools.py` |
 | OpenAI-compatible API checks | `python3 tests/test_openai_api_checks.py` |
 | Local frontend checks | `python3 tests/test_frontend_checks.py` |
 | End-to-end multi-tool test | `python3 tests/test_end_to_end_multitool.py` |

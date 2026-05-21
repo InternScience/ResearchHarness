@@ -5,6 +5,7 @@ This document describes the default tool surface exposed to the model. Default t
 The current implementation is grouped by category:
 
 - `agent_base/tools/tool_file.py`
+- `agent_base/tools/custom.py`
 - `agent_base/tools/tool_extra.py`
 - `agent_base/tools/tool_runtime.py`
 - `agent_base/tools/tool_user.py`
@@ -35,6 +36,16 @@ The current tool set is:
 Optional extra tools are not loaded by default. Enable them explicitly with `--extra-tool NAME`.
 
 - `str_replace_editor`
+
+Python embedding can also expose a complete custom tool set with
+`researchharness.create_agent(tools=[...])`. In that mode, prefer built-in tool
+classes such as `Read` and `Bash` plus functions decorated with
+`@researchharness.tool`. The `tools` list is the full exposed set, so omitting a
+default tool removes it for that agent. String tool names remain useful for CLI
+and config-driven adapters.
+
+`extra_tools` is separate: it only appends optional compatibility tools to the
+default ResearchHarness tool set and cannot be combined with `tools`.
 
 ## Execution Semantics
 
@@ -108,6 +119,33 @@ run before the edit has completed.
 | `TerminalInterrupt` | Runtime | `session_id`, `max_output_chars?` | Send `Ctrl-C` to the foreground process in a terminal session without destroying the session. | Use when a long-running process must be interrupted but the shell should remain alive. |
 | `TerminalKill` | Runtime | `session_id`, `force?` | Terminate a persistent terminal session and release resources. | Final cleanup step for terminal sessions that are no longer needed. |
 | `str_replace_editor` | Optional compatibility | `command`, `path`, `file_text?`, `old_str?`, `new_str?`, `insert_line?`, `view_range?` | Text editing compatibility tool. | Not loaded by default. Enable with `--extra-tool str_replace_editor`. Requires absolute paths inside the workspace. |
+
+## Python Function Tools
+
+Use `@researchharness.tool` when embedding ResearchHarness as a Python library:
+
+```python
+from researchharness import Read, Write, create_agent, tool
+
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+agent = create_agent(tools=[Read, Write, add_numbers])
+```
+
+Validation happens at agent initialization. A custom function must have:
+
+- a valid unique tool name
+- a docstring or explicit description
+- JSON-compatible parameter annotations such as `str`, `int`, `float`, `bool`,
+  `list[str]`, `dict[str, ...]`, or `Literal[...]`
+- no `*args`, `**kwargs`, or positional-only parameters
+
+The context parameters `workspace_root`, `runtime_deadline`, and `model_name`
+can be accepted as keyword-only parameters. They are supplied by the runtime and
+are not exposed to the model schema.
 
 ## Glob
 

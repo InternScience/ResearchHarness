@@ -31,6 +31,7 @@ If you are reading the repository for the first time, start with these paths.
 ### Tools
 
 - [agent_base/tools/tool_file.py](../agent_base/tools/tool_file.py): file, PDF, and image tools.
+- [agent_base/tools/custom.py](../agent_base/tools/custom.py): Python function tools for embedded usage.
 - [agent_base/tools/tool_runtime.py](../agent_base/tools/tool_runtime.py): Bash and persistent terminal tools.
 - [agent_base/tools/tool_web.py](../agent_base/tools/tool_web.py): web search, scholar search, and webpage fetching.
 - [agent_base/tools/README.md](../agent_base/tools/README.md): detailed tool documentation.
@@ -202,6 +203,42 @@ answer until you click **New chat**. While running, the send button becomes
 **Stop**; it interrupts at the next safe point and keeps the conversation
 context for the next message. The model dropdown is local to each run; changing
 it affects the next run only and does not mutate `.env` or other sessions.
+
+### Python Import API
+
+The direct Python API exposes the same core controls as CLI mode:
+
+```python
+from researchharness import Bash, Read, Write, create_agent, tool
+
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+agent = create_agent(
+    workspace_root="./workspace",
+    role_prompt="Answer carefully from evidence.",
+    role_prompt_files=["benchmarks/QA/role_prompt.md"],
+    tools=[Read, Write, Bash, add_numbers],
+)
+
+answer = agent.run(
+    "Inspect the workspace and write a short summary.",
+    images=["/abs/path/to/image-1.png"],
+)
+```
+
+`role_prompt` is an inline prompt block. `role_prompt_files=[...]` accepts one
+or more files and appends them in order, matching the repeatable CLI
+`--role-prompt-file` behavior.
+
+Use `tools=None` for the default tool set. Use `tools=[...]` as a complete
+explicit tool set; omitted built-ins are removed. In Python code, prefer
+built-in tool classes such as `Read` and `Bash` over strings so IDE navigation
+and refactoring keep working. Use `extra_tools=[...]` only to append
+optional compatibility tools such as `str_replace_editor` to the default set.
+`tools` and `extra_tools` are separate modes and cannot be passed together.
 
 ### CLI Parameters
 
@@ -625,6 +662,7 @@ python3 tests/test_openai_api_checks.py
 python3 tests/test_agent_extension_checks.py
 python3 tests/test_edge_case_checks.py
 python3 tests/test_extra_tools.py
+python3 tests/test_python_api_tools.py
 python3 tests/test_toolchain_validation.py
 ```
 

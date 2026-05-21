@@ -20,6 +20,7 @@ from agent_base.provider_compat import apply_sampling_params
 from agent_base.prompt import composed_system_prompt
 from agent_base.session_state import AgentSessionState, CompactionRecord, persist_session_state, resolve_session_state_path
 from agent_base.trace_utils import FlatTraceWriter
+from agent_base.tools.custom import build_custom_tool_map
 from agent_base.tools.tooling import normalize_workspace_root
 from agent_base.tools.tool_extra import StrReplaceEditor
 from agent_base.tools.tool_file import Edit, Glob, Grep, Read, ReadImage, ReadPDF, Write
@@ -645,6 +646,16 @@ def tool_execution_batches(tool_names: Sequence[str]) -> list[list[int]]:
     return batches
 
 
+def normalized_image_inputs(images: Optional[str | Path | Sequence[str | Path]]) -> list[str | Path]:
+    if images is None:
+        return []
+    if isinstance(images, (str, Path)):
+        return [images]
+    if isinstance(images, Sequence) and not isinstance(images, (str, bytes)):
+        return list(images)
+    raise ValueError("images must be a path or a sequence of paths.")
+
+
 class MultiTurnReactAgent(BaseAgent):
     def __init__(
         self,
@@ -652,16 +663,34 @@ class MultiTurnReactAgent(BaseAgent):
         llm: Optional[Dict] = None,
         trace_dir: Optional[str] = None,
         role_prompt: Optional[str] = None,
+        workspace_root: Optional[str] = None,
+        custom_tools: Optional[Sequence[Any]] = None,
         max_llm_calls: Optional[int] = None,
         max_rounds: Optional[int] = None,
         max_runtime_seconds: Optional[int] = None,
     ):
         if not isinstance(llm, dict):
             raise ValueError("llm must be a dict configuration.")
+        custom_tool_map = build_custom_tool_map(custom_tools)
+        conflicting_tools = [name for name in custom_tool_map if name in ALL_TOOL_MAP]
+        if conflicting_tools:
+            raise ValueError(f"Custom tool names conflict with built-in tools: {conflicting_tools}")
+        tool_registry = {**ALL_TOOL_MAP, **custom_tool_map}
         requested_tools = self.resolve_function_list(function_list)
         if requested_tools is None:
             requested_tools = list(AVAILABLE_TOOL_MAP.keys())
-        unknown_tools = [tool for tool in requested_tools if tool not in ALL_TOOL_MAP]
+        for tool_name in custom_tool_map:
+            if tool_name not in requested_tools:
+                requested_tools.append(tool_name)
+        duplicate_tools: list[str] = []
+        seen_tools: set[str] = set()
+        for tool_name in requested_tools:
+            if tool_name in seen_tools and tool_name not in duplicate_tools:
+                duplicate_tools.append(tool_name)
+            seen_tools.add(tool_name)
+        if duplicate_tools:
+            raise ValueError(f"Duplicate tools requested: {duplicate_tools}")
+        unknown_tools = [tool for tool in requested_tools if tool not in tool_registry]
         if unknown_tools:
             raise ValueError(f"Unknown tools requested: {unknown_tools}")
         if "model" not in llm or not str(llm["model"]).strip():
@@ -669,7 +698,7 @@ class MultiTurnReactAgent(BaseAgent):
         if "generate_cfg" not in llm or not isinstance(llm["generate_cfg"], dict):
             raise ValueError('llm["generate_cfg"] must be a dict.')
 
-        self.tool_map = {tool_name: ALL_TOOL_MAP[tool_name] for tool_name in requested_tools}
+        self.tool_map = {tool_name: tool_registry[tool_name] for tool_name in requested_tools}
         self.tool_names = list(self.tool_map.keys())
         self.model = str(llm["model"])
         self.llm_generate_cfg = llm["generate_cfg"]
@@ -677,6 +706,7 @@ class MultiTurnReactAgent(BaseAgent):
         self.trace_path: Optional[Path] = None
         self.session_state_path: Optional[Path] = None
         self.role_prompt = self.resolve_role_prompt(role_prompt)
+        self.workspace_root = normalize_workspace_root(workspace_root) if workspace_root else None
         self.max_llm_calls = int(max_llm_calls) if max_llm_calls is not None else max_llm_calls_per_run()
         self.max_rounds = int(max_rounds) if max_rounds is not None else max_agent_rounds()
         self.max_runtime_seconds = (
@@ -873,9 +903,34 @@ class MultiTurnReactAgent(BaseAgent):
                 )
         return token_count
 
-    def run(self, prompt: str, workspace_root: Optional[str] = None) -> str:
+    def run(
+        self,
+        prompt: str,
+        workspace_root: Optional[str] = None,
+        images: Optional[str | Path | Sequence[str | Path]] = None,
+    ) -> str:
         """Run the agent on one prompt and return only the final result text."""
-        return self._run_session(prompt, workspace_root=workspace_root)["result_text"]
+        resolved_workspace_root = normalize_workspace_root(
+            workspace_root if workspace_root is not None else self.workspace_root
+        )
+        run_prompt = prompt
+        initial_content_parts: list[dict[str, Any]] = []
+        saved_image_paths: list[str] = []
+        for image_index, image_path in enumerate(normalized_image_inputs(images)):
+            saved_path, data_url = stage_image_file_for_input(
+                image_path,
+                workspace_root=resolved_workspace_root,
+                image_index=image_index,
+            )
+            saved_image_paths.append(saved_path)
+            initial_content_parts.extend(image_input_content_parts(data_url, saved_path))
+        if saved_image_paths:
+            run_prompt = append_saved_image_paths_to_prompt(prompt, saved_image_paths)
+        return self._run_session(
+            run_prompt,
+            workspace_root=str(resolved_workspace_root),
+            initial_content_parts=initial_content_parts or None,
+        )["result_text"]
 
     def _run_session(
         self,
@@ -891,7 +946,9 @@ class MultiTurnReactAgent(BaseAgent):
             raise ValueError("prompt must be a non-empty string.")
 
         prompt_text = prompt.strip()
-        resolved_workspace_root = normalize_workspace_root(workspace_root)
+        resolved_workspace_root = normalize_workspace_root(
+            workspace_root if workspace_root is not None else self.workspace_root
+        )
         start_time = time.time()
         trace_dir = self.trace_dir
         cur_date = today_date()

@@ -56,6 +56,9 @@ jobs:
       - name: Run optional extra-tool checks
         run: python tests/test_extra_tools.py
 
+      - name: Run Python import API checks
+        run: python tests/test_python_api_tools.py
+
   main-agent-api:
     name: Main agent API smoke
     runs-on: ubuntu-latest
