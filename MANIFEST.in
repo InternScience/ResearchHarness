@@ -3,6 +3,7 @@ include README.md
 include VERSION
 include requirements.txt
 include .env.example
+recursive-include agent_base/prompts *.md
 recursive-include docs *.md
 recursive-include frontend/static *
 recursive-include benchmarks *.md *.png

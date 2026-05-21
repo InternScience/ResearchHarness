@@ -63,5 +63,6 @@ include = [
 namespaces = true
 
 [tool.setuptools.package-data]
+agent_base = ["prompts/*.md", "prompts/**/*.md"]
 frontend = ["static/*"]
 benchmarks = ["**/*.md", "**/*.png"]
