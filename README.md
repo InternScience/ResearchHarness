@@ -86,6 +86,10 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-05-22) Added a real API smoke test that runs the five SGI benchmark README server commands and OpenAI SDK examples, then validates each expected final-answer format.
+
+🚩 **Update** (2026-05-22) CLI and API deployments can now expose an explicit complete tool set with repeatable `--tool NAME`, useful when a run needs a smaller or benchmark-specific tool surface.
+
 🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
 
 🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
@@ -736,6 +740,10 @@ deployment, and QA/VQA benchmark deployment. Advanced users can still combine
 `--role-prompt-file`, `--input-wrapper`, and `--output-wrapper` manually when a
 custom application needs only part of the benchmark behavior.
 
+For benchmark deployments that need a smaller tool surface, pass repeatable
+`--tool NAME` flags. This defines the complete exposed tool set for each run
+and cannot be combined with `--extra-tool`.
+
 ### API Concurrency
 
 The API endpoint remains synchronous from the client's perspective, but long
@@ -1064,6 +1072,9 @@ repository for local images.
 
 More detailed tool documentation lives in [agent_base/tools/README.md](agent_base/tools/README.md).
 
+Tool-use requests should use the native tool calling interface. User-required
+final answer formats remain ordinary final-answer text.
+
 Tool calls follow a single-request contract: `WebSearch.query`,
 `ScholarSearch.query`, and `WebFetch.url` each accept one string, not a list.
 When the model needs multiple independent searches, page fetches, file reads,
@@ -1146,6 +1157,7 @@ RESEARCHHARNESS_TEST_PYTHON="/path/to/your/python"
 | Optional extra-tool checks | `python3 tests/test_extra_tools.py` |
 | Python import API and custom-tool checks | `python3 tests/test_python_api_tools.py` |
 | OpenAI-compatible API checks | `python3 tests/test_openai_api_checks.py` |
+| SGI benchmark README server/example smoke test | `python3 tests/test_sgi_benchmark_readmes.py` |
 | Local frontend checks | `python3 tests/test_frontend_checks.py` |
 | End-to-end multi-tool test | `python3 tests/test_end_to_end_multitool.py` |
 | End-to-end local file discovery test | `python3 tests/test_end_to_end_glob_grep.py` |

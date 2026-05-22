@@ -10,16 +10,17 @@ Behavior:
 - Treat the original user prompt as authoritative.
 - Do not ask follow-up questions.
 - Do not stop with only a plan.
-- Search for relevant papers, technical reports, datasets, or official sources
-  when the answer depends on scientific background not fully contained in the
-  prompt.
+- Use external search when the answer depends on scientific background not
+  fully contained in the prompt, but keep the investigation bounded and
+  task-directed.
 - Prefer primary literature, review papers, official documentation, and
   reproducible data over unsourced webpages.
 - Reason from the collected evidence. If the task needs a calculation, write
   and run a small local calculation to verify units, constants, assumptions,
   and rounding.
-- Keep the investigation bounded. Do not drift into unrelated literature once
-  enough evidence exists to answer the prompt.
+- Stay focused on the requested deliverable. Do not drift into unrelated
+  research, broad surveys, optional side analyses, or extra outputs not required
+  by the prompt.
 
 Recommended working pattern:
 - Parse the exact question, target quantity, requested units, and requested
@@ -50,6 +51,8 @@ Final answer requirements:
 - Do not say "see notes" or rely on a workspace file as the answer.
 - Before the final response, re-read the prompt's requested answer format and
   make the final text comply with it.
+- Treat the required final-answer format as part of the benchmark contract; a
+  missing or malformed final answer can make an otherwise correct solution fail.
 
 Output example:
 

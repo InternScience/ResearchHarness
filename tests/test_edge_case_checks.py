@@ -695,10 +695,10 @@ def check_reasoning_content_is_preserved_across_tool_rounds() -> tuple[bool, str
     return ok, detail
 
 
-def check_reasoning_content_is_preserved_across_invalid_retry_turns() -> tuple[bool, str]:
+def check_visible_think_and_answer_tags_are_plain_final_text() -> tuple[bool, str]:
     from agent_base.react_agent import MultiTurnReactAgent
 
-    case_dir = TMP_DIR / "reasoning_content_invalid_retry"
+    case_dir = TMP_DIR / "visible_think_answer_tags"
     shutil.rmtree(case_dir, ignore_errors=True)
     case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -718,58 +718,84 @@ def check_reasoning_content_is_preserved_across_invalid_retry_turns() -> tuple[b
                 },
             )
             self._turn = 0
-            self.second_round_messages = []
 
         def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
             self._turn += 1
-            if self._turn == 1:
-                return {
-                    "status": "ok",
-                    "finish_reason": "stop",
-                    "content": "<answer>I have already solved it.</answer>",
-                    "tool_calls": [],
-                    "reasoning_content": "deepseek-invalid-turn-reasoning",
-                    "raw_message": {
-                        "role": "assistant",
-                        "content": "<answer>I have already solved it.</answer>",
-                        "reasoning_content": "deepseek-invalid-turn-reasoning",
-                    },
-                }
-            self.second_round_messages = msgs
             return {
                 "status": "ok",
                 "finish_reason": "stop",
-                "content": "done",
+                "content": "<think>brief visible reasoning</think>\n<answer>I have already solved it.</answer>",
                 "tool_calls": [],
             }
 
     agent = FakeAgent()
-    session = agent._run_session("Preserve reasoning content after invalid retry turn", workspace_root=str(case_dir))
-    assistant_messages = [msg for msg in agent.second_round_messages if msg.get("role") == "assistant"]
-    preserved_message = next(
-        (
-            msg
-            for msg in assistant_messages
-            if msg.get("reasoning_content") == "deepseek-invalid-turn-reasoning"
-            and msg.get("content") == "<answer>I have already solved it.</answer>"
-            and not msg.get("tool_calls")
-        ),
-        None,
-    )
+    session = agent._run_session("Accept visible reasoning and answer tags as final text", workspace_root=str(case_dir))
     detail = json.dumps(
         {
             "termination": session.get("termination"),
             "result_text": session.get("result_text"),
-            "assistant_messages": assistant_messages,
-            "second_round_messages": agent.second_round_messages,
+            "turns": agent._turn,
         },
         ensure_ascii=False,
         indent=2,
     )
     ok = (
         session.get("termination") == "result"
-        and session.get("result_text") == "done"
-        and preserved_message is not None
+        and "<think>brief visible reasoning</think>" in session.get("result_text", "")
+        and "<answer>I have already solved it.</answer>" in session.get("result_text", "")
+        and agent._turn == 1
+    )
+    return ok, detail
+
+
+def check_tool_like_text_tags_can_be_plain_final_text() -> tuple[bool, str]:
+    from agent_base.react_agent import MultiTurnReactAgent
+
+    case_dir = TMP_DIR / "tool_like_text_tags_allowed"
+    shutil.rmtree(case_dir, ignore_errors=True)
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    class FakeAgent(MultiTurnReactAgent):
+        def __init__(self):
+            super().__init__(
+                function_list=["Write"],
+                llm={
+                    "model": "fake-model",
+                    "generate_cfg": {
+                        "max_input_tokens": 10000,
+                        "max_retries": 1,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                        "presence_penalty": 0.0,
+                    },
+                },
+            )
+            self._turn = 0
+
+        def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
+            self._turn += 1
+            return {
+                "status": "ok",
+                "finish_reason": "stop",
+                "content": "<tool_call>This is requested literal text, not a native tool call.</tool_call>",
+                "tool_calls": [],
+            }
+
+    agent = FakeAgent()
+    session = agent._run_session("Accept literal tag output when it is plain final text", workspace_root=str(case_dir))
+    detail = json.dumps(
+        {
+            "termination": session.get("termination"),
+            "result_text": session.get("result_text"),
+            "turns": agent._turn,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        session.get("termination") == "result"
+        and session.get("result_text") == "<tool_call>This is requested literal text, not a native tool call.</tool_call>"
+        and agent._turn == 1
     )
     return ok, detail
 
@@ -1963,7 +1989,8 @@ def main() -> int:
         ("DeepSeek ReadImage fallback", check_deepseek_readimage_falls_back_to_text_only_context),
         ("Old image parts omitted but traced", check_old_image_parts_are_omitted_from_followup_requests_but_traced),
         ("Reasoning content preserved", check_reasoning_content_is_preserved_across_tool_rounds),
-        ("Reasoning content preserved on invalid retry", check_reasoning_content_is_preserved_across_invalid_retry_turns),
+        ("Visible think/answer tags accepted", check_visible_think_and_answer_tags_are_plain_final_text),
+        ("Tool-like text tags can be final text", check_tool_like_text_tags_can_be_plain_final_text),
         ("Mixed text and tool calls executed", check_mixed_text_and_tool_calls_are_executed),
         ("Reasoning replay error reported", check_reasoning_replay_error_is_reported_without_recovery),
         ("Compact trigger parser", check_compact_trigger_token_parser_supports_k_suffix),

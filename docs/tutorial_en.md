@@ -272,6 +272,7 @@ optional compatibility tools such as `str_replace_editor` to the default set.
 | `--role-prompt-file PATH` | no, repeatable | Append role-specific prompt text to the base system prompt. |
 | `--images PATH [PATH ...]` | no | Copy one or more local images into `inputs/images/` and attach them to the initial user message. |
 | `--chat` / `--no-chat` | no | Enable or disable CLI follow-up mode. Default: enabled only when stdin and stdout are interactive terminals. |
+| `--tool NAME` | no, repeatable | Expose an explicit complete tool set. Cannot be combined with `--extra-tool`. |
 | `--extra-tool NAME` | no, repeatable | Enable an optional compatibility tool such as `str_replace_editor`. Optional tools are not loaded by default. |
 
 ## 4. OpenAI-Compatible API Server
@@ -320,6 +321,7 @@ python3 run_server.py \
 | `--input-wrapper` / `--no-input-wrapper` | no | disabled | Enable or disable the input LLM wrapper. |
 | `--output-wrapper` / `--no-output-wrapper` | no | disabled | Enable or disable the output LLM wrapper. |
 | `--max-concurrent-runs N` | no | `32` | Maximum concurrent agent runs handled by this server process. Raise it when local resources and backend API quota allow higher throughput. |
+| `--tool NAME` | no, repeatable | none | Expose an explicit complete tool set for every API run. Cannot be combined with `--extra-tool`. |
 | `--extra-tool NAME` | no, repeatable | none | Enable an optional compatibility tool for every API run, for example `str_replace_editor`. |
 
 ### Wrapper Modes
@@ -680,6 +682,7 @@ Recommended checks:
 ```bash
 python3 tests/test_tool_availability.py
 python3 tests/test_openai_api_checks.py
+python3 tests/test_sgi_benchmark_readmes.py
 python3 tests/test_agent_extension_checks.py
 python3 tests/test_edge_case_checks.py
 python3 tests/test_extra_tools.py

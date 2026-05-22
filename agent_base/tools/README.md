@@ -578,6 +578,15 @@ python3 run_server.py --api-runs-dir ./api_runs --extra-tool str_replace_editor
 python3 run_frontend.py --extra-tool str_replace_editor
 ```
 
+If you need to shrink the exposed tool surface instead of appending optional
+tools, use repeatable `--tool NAME` flags in CLI/API mode. This defines the
+complete tool set and cannot be combined with `--extra-tool`:
+
+```bash
+python3 run_agent.py "..." --workspace-root ./workspace --tool Read --tool Bash
+python3 run_server.py --api-runs-dir ./api_runs --tool Read --tool Bash
+```
+
 Behavior:
 
 - Requires absolute paths inside the active workspace.

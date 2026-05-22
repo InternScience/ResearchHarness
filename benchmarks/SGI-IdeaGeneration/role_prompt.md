@@ -9,13 +9,18 @@ Behavior:
 - Treat the original user prompt as authoritative.
 - Do not ask follow-up questions.
 - Do not stop with only a plan.
-- Search for relevant recent papers, benchmark papers, surveys, or technical
-  reports when they help identify the current state of the field.
+- Use external search only when it is genuinely needed to resolve an ambiguity
+  or missing background not contained in the prompt. Keep any search bounded
+  and task-directed; do not perform open-ended browsing or broad literature
+  review.
 - Use the literature to understand existing methods, then identify limitations,
   gaps, or underexplored combinations before proposing the new idea.
 - The proposal must be specific enough to implement and evaluate.
 - Avoid vague "use AI to improve X" ideas, generic survey prose, or a pure
   literature summary.
+- Stay focused on the requested deliverable. Do not drift into unrelated
+  research, broad surveys, optional side analyses, or extra outputs not required
+  by the prompt.
 
 Recommended working pattern:
 - Extract the field, task objective, related work, existing solutions,
@@ -60,6 +65,8 @@ Final answer requirements:
 - Do not answer with only a summary of existing work.
 - Before the final response, re-read the prompt's requested answer format and
   make the final JSON valid.
+- Treat the required final-answer format as part of the benchmark contract; a
+  missing or malformed final answer can make an otherwise correct solution fail.
 
 Output example:
 

@@ -260,6 +260,7 @@ answer = agent.run(
 | `--role-prompt-file PATH` | 否，可重复 | 追加 role-specific prompt 到 base system prompt。 |
 | `--images PATH [PATH ...]` | 否 | 把一张或多张本地图片复制到 `inputs/images/` 并附加到初始用户消息。 |
 | `--chat` / `--no-chat` | 否 | 开启或关闭 CLI follow-up 模式。默认只在 stdin 和 stdout 都是交互式终端时开启。 |
+| `--tool NAME` | 否，可重复 | 暴露一个显式的完整工具全集。不能和 `--extra-tool` 同时使用。 |
 | `--extra-tool NAME` | 否，可重复 | 开启一个 optional compatibility tool，例如 `str_replace_editor`。默认不加载 optional tools。 |
 
 ## 4. OpenAI-Compatible API Server
@@ -306,6 +307,7 @@ python3 run_server.py \
 | `--input-wrapper` / `--no-input-wrapper` | 否 | 关闭 | 开启或关闭输入 LLM wrapper。 |
 | `--output-wrapper` / `--no-output-wrapper` | 否 | 关闭 | 开启或关闭输出 LLM wrapper。 |
 | `--max-concurrent-runs N` | 否 | `32` | 当前 server 进程最多同时执行多少个 agent run。资源和后端 API quota 足够时可以调高。 |
+| `--tool NAME` | 否，可重复 | 无 | 为每个 API run 暴露显式完整工具全集。不能和 `--extra-tool` 同时使用。 |
 | `--extra-tool NAME` | 否，可重复 | 无 | 为每个 API run 开启 optional compatibility tool，例如 `str_replace_editor`。 |
 
 ### Wrapper 模式
@@ -646,6 +648,7 @@ benchmark-specific 行为应放在 `benchmarks/`，不要塞进 `agent_base/`。
 ```bash
 python3 tests/test_tool_availability.py
 python3 tests/test_openai_api_checks.py
+python3 tests/test_sgi_benchmark_readmes.py
 python3 tests/test_agent_extension_checks.py
 python3 tests/test_edge_case_checks.py
 python3 tests/test_extra_tools.py

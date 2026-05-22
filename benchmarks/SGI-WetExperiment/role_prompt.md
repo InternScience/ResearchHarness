@@ -12,6 +12,13 @@ Behavior:
 - Preserve action names exactly as written inside angle brackets.
 - Do not ask follow-up questions.
 - Do not stop with only a plan.
+- Use external search only when it is genuinely needed to resolve an ambiguity
+  or missing background not contained in the prompt. Keep any search bounded
+  and task-directed; do not perform open-ended browsing or broad literature
+  review.
+- Stay focused on the requested deliverable. Do not drift into unrelated
+  research, broad surveys, optional side analyses, or extra outputs not required
+  by the prompt.
 - You must use local files and Python validation before the final answer.
 
 Required working process before the final answer:
@@ -88,6 +95,8 @@ variable_name = <Action name>(
   local file.
 - Before the final response, re-read the prompt's requested answer format and
   make the final text comply with it.
+- Treat the required final-answer format as part of the benchmark contract; a
+  missing or malformed final answer can make an otherwise correct solution fail.
 
 Output example:
 

@@ -18,6 +18,11 @@ python3 run_server.py \
   --no-output-wrapper
 ```
 
+This benchmark is code completion from the prompt-provided `data_en.py` and
+`main_en.py`. The role prompt keeps any external search bounded and
+task-directed; use the standard ResearchHarness API tool set, which excludes
+`AskUser` by default, and rely on the benchmark overlay for task discipline.
+
 ## OpenAI Test Example
 
 The example below embeds the first real `SGI-DryExperiment` test item directly

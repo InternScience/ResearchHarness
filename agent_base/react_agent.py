@@ -378,19 +378,6 @@ def compaction_trace_payload(
     }
 
 
-def legacy_protocol_error(content: str) -> Optional[str]:
-    stripped = content.lstrip()
-    if stripped.startswith("<tool_call>"):
-        return "assistant emitted deprecated text <tool_call> protocol"
-    if stripped.startswith("<tool_response>"):
-        return "assistant emitted deprecated text <tool_response> protocol"
-    if stripped.startswith("<think>"):
-        return "assistant emitted deprecated text <think> protocol"
-    if stripped.startswith("<answer>"):
-        return "assistant emitted deprecated text <answer> protocol"
-    return None
-
-
 def tool_schema(tool: Any) -> dict[str, Any]:
     return {
         "type": "function",
@@ -473,6 +460,13 @@ def resolve_extra_tool_names(extra_tools: Optional[Sequence[str]]) -> list[str]:
             raise ValueError(f"Unknown extra tool requested: {name}")
         if name not in resolved:
             resolved.append(name)
+    return resolved
+
+
+def validate_named_tools(tool_names: Optional[Sequence[str]]) -> list[str]:
+    resolved = resolved_tool_names(tool_names)
+    if tool_names is not None:
+        available_tool_schemas(resolved)
     return resolved
 
 
@@ -1266,39 +1260,6 @@ class MultiTurnReactAgent(BaseAgent):
                 termination = "llm api error"
                 return finalize(result_text, termination, error=result_text)
 
-            deprecated_protocol = legacy_protocol_error(assistant_text)
-            if deprecated_protocol is not None:
-                trace_writer.append(
-                    role="assistant",
-                    text=assistant_text.strip(),
-                    turn_index=round_index,
-                    tool_call_ids=assistant_tool_call_ids,
-                    tool_names=assistant_tool_names,
-                    tool_arguments=assistant_tool_arguments,
-                    finish_reason=finish_reason,
-                    error=deprecated_protocol,
-                )
-                retry_assistant_message = assistant_retry_history_message(
-                    content=assistant_content,
-                    reasoning_content=assistant_reasoning,
-                )
-                if retry_assistant_message is not None:
-                    messages.append(retry_assistant_message)
-                correction_text = (
-                    "Error: The previous assistant turn used the deprecated text-tag protocol. "
-                    "Do not emit <tool_call>, <tool_response>, <think>, or <answer> in plain text. "
-                    "Use only the native tool calling interface when tools are needed, or plain final result text when no more tools are needed."
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": correction_text,
-                    }
-                )
-                trace_writer.append(role="user", text=correction_text, turn_index=round_index)
-                persist_state(error=deprecated_protocol)
-                continue
-
             if finish_reason == "length" and assistant_tool_calls:
                 protocol_error = "assistant tool call turn was truncated by output limit"
                 trace_writer.append(
@@ -1528,7 +1489,7 @@ def resolve_agent_class_for_role_prompt_files(role_prompt_files: Sequence[str]) 
     return MultiTurnReactAgent
 
 
-def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str], str, list[str], list[str], Optional[bool], list[str]]:
+def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str], str, list[str], list[str], Optional[bool], list[str], list[str]]:
     parser = argparse.ArgumentParser(description="Run the local agent directly from agent_base.react_agent.")
     parser.add_argument("prompt", nargs="*", help="Prompt text.")
     parser.add_argument("--prompt-file", help="Optional UTF-8 text file containing the prompt.")
@@ -1568,7 +1529,17 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         metavar="NAME",
         help="Enable one optional extra tool for this run. Currently supported: str_replace_editor. May be passed multiple times.",
     )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        dest="tool_names",
+        metavar="NAME",
+        help="Expose an explicit complete tool set for this run. May be passed multiple times. Cannot be combined with --extra-tool.",
+    )
     args = parser.parse_args(argv)
+    if args.tool_names and args.extra_tools:
+        raise ValueError("--tool defines the complete tool set and cannot be combined with --extra-tool.")
 
     prompt_text = ""
     if args.prompt_file:
@@ -1587,6 +1558,7 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         list(args.role_prompt_files),
         [path for group in args.image_paths for path in group],
         args.chat,
+        validate_named_tools(args.tool_names) if args.tool_names else [],
         resolve_extra_tool_names(args.extra_tools),
     )
 
@@ -1595,11 +1567,27 @@ def main(argv: Optional[list[str]] = None) -> int:
     load_default_dotenvs()
     try:
         require_required_env("ResearchHarness agent")
-        prompt_text, trace_dir, workspace_root, role_prompt, role_prompt_files, image_paths, chat_arg, extra_tools = _parse_cli_args(argv or sys.argv[1:])
+        (
+            prompt_text,
+            trace_dir,
+            workspace_root,
+            role_prompt,
+            role_prompt_files,
+            image_paths,
+            chat_arg,
+            tool_names,
+            extra_tools,
+        ) = _parse_cli_args(argv or sys.argv[1:])
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         forbidden_tools = set(getattr(agent_cls, "forbidden_tool_names", set()))
+        forbidden_requested_tools = sorted(set(tool_names) & forbidden_tools)
+        if forbidden_requested_tools:
+            raise ValueError(f"Tools are not allowed in this run: {forbidden_requested_tools}")
         agent = agent_cls(
             function_list=(
+                tool_names
+                if tool_names
+                else
                 default_tool_names(include_ask_user="AskUser" not in forbidden_tools, extra_tools=extra_tools)
                 if extra_tools
                 else None

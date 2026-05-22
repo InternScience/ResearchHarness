@@ -227,6 +227,18 @@ def main() -> int:
                 extra_tools=("str_replace_editor",),
             ),
         )
+        explicit_tool_response = run_chat_completion(
+            {
+                "model": "RH",
+                "messages": [{"role": "user", "content": "Use only local code tools if needed."}],
+            },
+            ServerConfig(
+                api_runs_dir=api_runs_root / "explicit_tools",
+                input_wrapper=False,
+                output_wrapper=False,
+                tool_names=("Read", "Write", "Edit", "Bash"),
+            ),
+        )
     finally:
         openai_server.MultiTurnReactAgent = previous_agent_cls
         openai_server.default_llm_config = previous_default_llm_config
@@ -367,8 +379,10 @@ def main() -> int:
         and api_response["choices"][0]["message"]["content"] == '{"expression":"7 + 5","answer":12}'
         and api_response["model"] == "RH--fake-vision-model"
         and extra_tool_response["model"] == "RH"
+        and explicit_tool_response["model"] == "RH"
         and "fake-vision-model" in fake_seen.get("models", [])
         and any("str_replace_editor" in names and "AskUser" not in names for names in fake_seen.get("function_lists", []))
+        and any(names == ["Read", "Write", "Edit", "Bash"] for names in fake_seen.get("function_lists", []))
         and invalid_model_rejected
         and workspace_alias_rejected
         and default_model_label == "RH"
@@ -441,6 +455,7 @@ def main() -> int:
                     "first_user_trace": first_user_trace,
                     "api_response": api_response,
                     "extra_tool_response": extra_tool_response,
+                    "explicit_tool_response": explicit_tool_response,
                     "api_run_dir": str(api_run_dir) if api_run_dir else "",
                     "fake_seen": fake_seen,
                     "custom_response": custom_response,

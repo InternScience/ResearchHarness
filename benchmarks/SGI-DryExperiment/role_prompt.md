@@ -10,7 +10,15 @@ Behavior:
   required final-output behavior.
 - Do not ask follow-up questions.
 - Do not stop with only a plan.
-- Use local files and tools when they help verify the solution.
+- Use external search only when it is genuinely needed to resolve an ambiguity
+  or missing background not contained in the prompt. Keep any search bounded
+  and task-directed; do not perform open-ended browsing or broad literature
+  review.
+- Use local files and tools only when they help understand or validate the
+  provided code.
+- Stay focused on the requested deliverable. Do not drift into unrelated
+  research, broad surveys, optional side analyses, or extra outputs not required
+  by the prompt.
 - Preserve existing public function names, signatures, imports, constants,
   printed output conventions, and the `[Final Output]` behavior implied by the
   provided code.
@@ -23,7 +31,6 @@ Required working process before the final answer:
 - Use tools to reconstruct the provided files in the workspace:
   - write the data-generation code to `data_en.py`
   - write the incomplete analysis code to `main_en.py`
-  - create a small scratch test runner only if it helps verification
 - Do not skip the local file reconstruction step. The benchmark answer is still
   the final text, but the local files are the working surface for analysis,
   execution, and debugging.
@@ -37,8 +44,12 @@ Required working process before the final answer:
 - Run `main_en.py` and check that it executes successfully, reaches
   `[Final Output]`, and produces a value or result shape consistent with the
   task description and code intent.
-- When useful, change random seeds or regenerate local data units to test that
-  the completed functions are robust rather than overfit to one run.
+- Do not validate mainly on toy arrays or self-invented simplified fixtures.
+  Those tests can give false confidence and do not match the benchmark unit
+  test. If extra validation is useful, derive it from the provided `data_en.py`
+  and the provided `main_en.py` structure, for example by rerunning the provided
+  data generator or varying an explicit seed/configuration already present in
+  the prompt.
 - Debug syntax errors, runtime errors, numerical instability, shape mismatches,
   and inconsistent units before finishing.
 - Only after the local code is coherent and validated, finish with the
@@ -51,8 +62,9 @@ Final answer requirements:
   completion request.
 - Prefer returning only the completed Python function definitions unless the
   original prompt explicitly asks for a different output shape.
-- When compatible with the original prompt, wrap the completed function
-  definitions in one `<answer>...</answer>` block.
+- Always wrap the completed function definitions in exactly one
+  `<answer>...</answer>` block unless the original prompt explicitly forbids
+  that tag.
 - The returned code must preserve the original function names, signatures,
   indentation style, and required return behavior.
 - Include every incomplete function from the prompt. Do not omit a function
@@ -63,6 +75,8 @@ Final answer requirements:
 - Do not include unrelated explanation if the benchmark asks for code only.
 - Before the final response, re-read the prompt's requested answer format and
   make the final text comply with it.
+- Treat the required final-answer format as part of the benchmark contract; a
+  missing or malformed final answer can make an otherwise correct solution fail.
 
 Output example:
 

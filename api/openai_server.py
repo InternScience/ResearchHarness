@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from agent_base.react_agent import (
     MultiTurnReactAgent,
+    available_tool_schemas,
     assistant_text_content,
     default_tool_names,
     default_llm_config,
@@ -108,9 +109,15 @@ class ServerConfig:
     output_wrapper: bool = False
     max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS
     extra_tools: tuple[str, ...] = ()
+    tool_names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         self.max_concurrent_runs = positive_int(self.max_concurrent_runs, "max_concurrent_runs")
+        self.tool_names = tuple(str(name).strip() for name in self.tool_names if str(name).strip())
+        if self.tool_names and self.extra_tools:
+            raise ValueError("tool_names defines the complete tool set and cannot be combined with extra_tools.")
+        if self.tool_names:
+            available_tool_schemas(self.tool_names)
         self.extra_tools = tuple(resolve_extra_tool_names(self.extra_tools))
 
 
@@ -483,9 +490,12 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
             f"Backend model {backend_model!r} does not support image content parts.",
         )
 
-    tool_names = default_tool_names(include_ask_user=False, extra_tools=config.extra_tools)
     agent = MultiTurnReactAgent(
-        function_list=tool_names,
+        function_list=(
+            list(config.tool_names)
+            if config.tool_names
+            else default_tool_names(include_ask_user=False, extra_tools=config.extra_tools)
+        ),
         llm=llm_config,
         trace_dir=str(trace_dir),
         role_prompt=config.role_prompt or None,
@@ -635,6 +645,7 @@ def create_app(config: ServerConfig) -> FastAPI:
             "output_wrapper": config.output_wrapper,
             "max_concurrent_runs": config.max_concurrent_runs,
             "extra_tools": list(config.extra_tools),
+            "tool_names": list(config.tool_names),
         }
 
     @app.post("/v1/chat/completions")
@@ -659,6 +670,7 @@ def serve(
     output_wrapper: bool = False,
     max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     extra_tools: Optional[list[str]] = None,
+    tool_names: Optional[list[str]] = None,
 ) -> None:
     root = normalize_workspace_root(api_runs_dir)
     role_prompt = read_role_prompt_files(role_prompt_files or [])
@@ -671,6 +683,7 @@ def serve(
         output_wrapper=output_wrapper,
         max_concurrent_runs=max_concurrent_runs,
         extra_tools=tuple(extra_tools or ()),
+        tool_names=tuple(tool_names or ()),
     )
     app = create_app(config)
     uvicorn.run(app, host=host, port=port)

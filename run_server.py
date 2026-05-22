@@ -59,6 +59,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="NAME",
         help="Enable one optional extra tool for every API run. Currently supported: str_replace_editor. May be passed multiple times.",
     )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        dest="tool_names",
+        metavar="NAME",
+        help="Expose an explicit complete tool set for every API run. May be passed multiple times. Cannot be combined with --extra-tool.",
+    )
     args = parser.parse_args(argv)
 
     load_default_dotenvs()
@@ -73,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             output_wrapper=args.output_wrapper,
             max_concurrent_runs=args.max_concurrent_runs,
             extra_tools=list(args.extra_tools),
+            tool_names=list(args.tool_names),
         )
     except (MissingRequiredEnvError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

@@ -13,11 +13,14 @@ Behavior:
 - Use `ReadImage` on saved image paths when available. If needed, use local
   image processing such as cropping, zooming, contrast adjustment, OCR, plotting,
   or simple measurements to clarify visual evidence.
-- Search for relevant papers or reliable scientific sources when the image or
-  question requires domain background not fully contained in the prompt.
+- Use external search only when it is genuinely needed to resolve an ambiguity
+  or missing background not contained in the prompt. Keep any search bounded
+  and task-directed; do not perform open-ended browsing or broad literature
+  review.
 - Reason through every plausible option and eliminate distractors.
-- Keep the investigation bounded. Do not do open-ended browsing once the visual
-  and scientific evidence is sufficient.
+- Stay focused on the requested deliverable. Do not drift into unrelated
+  research, broad surveys, optional side analyses, or extra outputs not required
+  by the prompt.
 
 Recommended working pattern:
 - Restate the key visual observations from the image.
@@ -42,6 +45,8 @@ Final answer requirements:
   still include the boxed option letter.
 - Before the final response, re-read the prompt's options and make sure the
   boxed letter corresponds to the selected option.
+- Treat the required final-answer format as part of the benchmark contract; a
+  missing or malformed final answer can make an otherwise correct solution fail.
 
 Output example:
 
