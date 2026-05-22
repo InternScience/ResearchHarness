@@ -125,6 +125,20 @@ Optional variables:
 | `DEBUG_SCHOLAR` | `false` | Verbose ScholarSearch logs. |
 | `DEBUG_VISIT` | `false` | Verbose WebFetch logs. |
 
+Configuration priority is:
+
+```text
+explicit Python/API/CLI arguments > process environment variables > .env > code defaults
+```
+
+In Python import mode, `create_agent(...)` and `run_agent(...)` can override
+model/runtime settings for one agent instance, including `api_key`, `api_base`,
+`model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
+`max_retries`, `temperature`, `top_p`, `presence_penalty`,
+`compact_trigger_tokens`, `max_llm_calls`, `max_rounds`, and
+`max_runtime_seconds`. In CLI mode, model and sampling options stay compact and
+come from process environment variables or `.env`.
+
 Before real use, run:
 
 ```bash
@@ -221,6 +235,9 @@ agent = create_agent(
     role_prompt="Answer carefully from evidence.",
     role_prompt_files=["benchmarks/QA/role_prompt.md"],
     tools=[Read, Write, Bash, add_numbers],
+    max_input_tokens=131072,
+    max_output_tokens=4096,
+    compact_trigger_tokens="96k",
 )
 
 answer = agent.run(
@@ -232,6 +249,10 @@ answer = agent.run(
 `role_prompt` is an inline prompt block. `role_prompt_files=[...]` accepts one
 or more files and appends them in order, matching the repeatable CLI
 `--role-prompt-file` behavior.
+
+Use `max_input_tokens` to match the model server context window,
+`max_output_tokens` to reserve response space, and `compact_trigger_tokens` to
+compact before the backend rejects an overlong request.
 
 Use `tools=None` for the default tool set. Use `tools=[...]` as a complete
 explicit tool set; omitted built-ins are removed. In Python code, prefer

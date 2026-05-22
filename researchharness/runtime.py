@@ -11,6 +11,42 @@ from agent_base.tools.tooling import ToolBase
 from agent_base.utils import load_default_dotenvs, read_role_prompt_files, require_required_env
 
 
+def _apply_llm_overrides(
+    llm: dict[str, Any],
+    *,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
+    max_input_tokens: Optional[int] = None,
+    max_output_tokens: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
+    compact_trigger_tokens: Optional[int | str] = None,
+) -> dict[str, Any]:
+    if api_key is not None:
+        llm["api_key"] = str(api_key)
+    if api_base is not None:
+        llm["api_base"] = str(api_base)
+    if timeout_seconds is not None:
+        llm["timeout_seconds"] = float(timeout_seconds)
+    generate_cfg = dict(llm.get("generate_cfg", {}))
+    for key, value in (
+        ("max_input_tokens", max_input_tokens),
+        ("max_output_tokens", max_output_tokens),
+        ("max_retries", max_retries),
+        ("temperature", temperature),
+        ("top_p", top_p),
+        ("presence_penalty", presence_penalty),
+        ("compact_trigger_tokens", compact_trigger_tokens),
+    ):
+        if value is not None:
+            generate_cfg[key] = value
+    llm["generate_cfg"] = generate_cfg
+    return llm
+
+
 def _resolve_tools(
     tools: Optional[Sequence[Any]],
     extra_tools: Optional[Sequence[str]],
@@ -78,6 +114,19 @@ def _read_role_prompt_blocks(role_prompt_files: Optional[str | Path | Sequence[s
 def create_agent(
     *,
     model_name: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
+    max_input_tokens: Optional[int] = None,
+    max_output_tokens: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
+    compact_trigger_tokens: Optional[int | str] = None,
+    max_llm_calls: Optional[int] = None,
+    max_rounds: Optional[int] = None,
+    max_runtime_seconds: Optional[int] = None,
     workspace_root: Optional[str] = None,
     trace_dir: Optional[str] = None,
     role_prompt: Optional[str] = None,
@@ -97,13 +146,29 @@ def create_agent(
         role_blocks.append(_read_role_prompt_blocks(role_prompt_files))
     resolved_role_prompt = "\n\n".join(block for block in role_blocks if block.strip())
     function_list, custom_tools = _resolve_tools(tools, extra_tools)
+    llm = _apply_llm_overrides(
+        default_llm_config(model_name=model_name),
+        api_key=api_key,
+        api_base=api_base,
+        timeout_seconds=timeout_seconds,
+        max_input_tokens=max_input_tokens,
+        max_output_tokens=max_output_tokens,
+        max_retries=max_retries,
+        temperature=temperature,
+        top_p=top_p,
+        presence_penalty=presence_penalty,
+        compact_trigger_tokens=compact_trigger_tokens,
+    )
     return MultiTurnReactAgent(
         function_list=function_list,
-        llm=default_llm_config(model_name=model_name),
+        llm=llm,
         trace_dir=trace_dir,
         role_prompt=resolved_role_prompt or None,
         workspace_root=workspace_root,
         custom_tools=custom_tools,
+        max_llm_calls=max_llm_calls,
+        max_rounds=max_rounds,
+        max_runtime_seconds=max_runtime_seconds,
     )
 
 
@@ -112,6 +177,19 @@ def run_agent(
     *,
     workspace_root: Optional[str] = None,
     model_name: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
+    max_input_tokens: Optional[int] = None,
+    max_output_tokens: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
+    compact_trigger_tokens: Optional[int | str] = None,
+    max_llm_calls: Optional[int] = None,
+    max_rounds: Optional[int] = None,
+    max_runtime_seconds: Optional[int] = None,
     trace_dir: Optional[str] = None,
     role_prompt: Optional[str] = None,
     role_prompt_files: Optional[str | Path | Sequence[str | Path]] = None,
@@ -123,6 +201,19 @@ def run_agent(
     """Run ResearchHarness once and return the final assistant text."""
     agent = create_agent(
         model_name=model_name,
+        api_key=api_key,
+        api_base=api_base,
+        timeout_seconds=timeout_seconds,
+        max_input_tokens=max_input_tokens,
+        max_output_tokens=max_output_tokens,
+        max_retries=max_retries,
+        temperature=temperature,
+        top_p=top_p,
+        presence_penalty=presence_penalty,
+        compact_trigger_tokens=compact_trigger_tokens,
+        max_llm_calls=max_llm_calls,
+        max_rounds=max_rounds,
+        max_runtime_seconds=max_runtime_seconds,
         workspace_root=workspace_root,
         trace_dir=trace_dir,
         role_prompt=role_prompt,

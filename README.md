@@ -121,7 +121,7 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-04-25) ResearchHarness now supports built-in context compaction for long multi-step tasks instead of relying only on a growing raw message list.
 
-🚩 **Update** (2026-04-25) The default compaction trigger is `128k`, and you can override it with `AUTO_COMPACT_TRIGGER_TOKENS=16k` or `llm.generate_cfg["compact_trigger_tokens"] = "32k"`.
+🚩 **Update** (2026-04-25) The default compaction trigger is `128k`, and you can override it with `AUTO_COMPACT_TRIGGER_TOKENS=16k` or `create_agent(compact_trigger_tokens="32k")`.
 
 🚩 **Update** (2026-04-25) The existing `trace_*.jsonl` format now records full `llm_call` and `compaction` payloads in the same file, so reasoning context, tool environment, and memory-compression steps can all be reused for training or distillation.
 
@@ -368,22 +368,30 @@ JINA_KEY="your_jina_key"
 MINERU_TOKEN="your_mineru_token"
 ```
 
-Sampling defaults and retry policy live in code. Override them programmatically
-when needed instead of storing them in `.env`.
+Sampling defaults and retry policy have code defaults, can be set with
+environment variables, and can be overridden per agent through the Python API.
 
 ### Configuration Precedence
 
 ResearchHarness uses explicit runtime arguments before ambient defaults:
 
 ```text
-command-line arguments > process environment variables > .env > code defaults
+explicit Python/API/CLI arguments > process environment variables > .env > code defaults
 ```
 
 Details:
 
+- In Python import mode, explicit `create_agent(...)` / `run_agent(...)`
+  arguments win for that agent instance. This includes `api_key`, `api_base`,
+  `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
+  `max_retries`, `temperature`, `top_p`, `presence_penalty`,
+  `compact_trigger_tokens`, `max_llm_calls`, `max_rounds`, and
+  `max_runtime_seconds`.
 - If a setting exists both as a command-line argument and an environment-level
   default, the command-line argument wins for that run. For example,
   `--workspace-root` overrides `WORKSPACE_ROOT`.
+- In API server mode, request-local options such as `model` and
+  `extra_body["workspace-root"]` override server defaults only for that request.
 - Process environment variables already exported in the shell are not
   overwritten by `.env`.
 - `.env` fills missing environment variables only; it is a convenient local
@@ -400,9 +408,12 @@ Details:
   frontend agent traces.
 - In CLI mode, interactive terminals enable follow-up chat by default. Use
   `--no-chat` for one-shot behavior or `--chat` to force follow-up mode.
-- Model and sampling settings such as `API_KEY`, `API_BASE`, `MODEL_NAME`,
-  `TEMPERATURE`, `MAX_INPUT_TOKENS`, and `LLM_MAX_OUTPUT_TOKENS` currently come
-  from environment variables or `.env`, not from direct CLI flags.
+- CLI mode intentionally keeps the command surface compact. Model and sampling
+  settings such as `API_KEY`, `API_BASE`, `MODEL_NAME`, `TEMPERATURE`,
+  `MAX_INPUT_TOKENS`, `LLM_MAX_OUTPUT_TOKENS`, and
+  `AUTO_COMPACT_TRIGGER_TOKENS` come from process environment variables or
+  `.env` in CLI mode. Use the Python API when these need to be set
+  programmatically per agent.
 
 ### Extending the Base Agent
 
@@ -519,6 +530,9 @@ agent = create_agent(
     role_prompt="Answer carefully from evidence.",
     role_prompt_files=["./benchmarks/QA/role_prompt.md"],
     tools=[Read, Write, Bash, add_numbers],
+    max_input_tokens=131072,
+    max_output_tokens=4096,
+    compact_trigger_tokens="96k",
 )
 
 answer = agent.run(
@@ -530,6 +544,12 @@ answer = agent.run(
 `workspace_root` is the default agent-visible workspace for later `agent.run(...)`
 calls. A specific run can still override it with `agent.run(prompt,
 workspace_root="./other_workspace")`.
+
+Runtime parameters passed to `create_agent(...)` or `run_agent(...)` override
+environment variables for that agent only. Use `max_input_tokens` to match the
+serving engine's context window, `max_output_tokens` to reserve response space,
+and `compact_trigger_tokens` to compact before the model server rejects an
+overlong request.
 
 `role_prompt` is for an inline prompt block. `role_prompt_files=[...]` accepts
 one or more files and appends them in order, matching the repeatable CLI
@@ -990,12 +1010,14 @@ AUTO_COMPACT_TRIGGER_TOKENS=16k python3 run_agent.py "your prompt"
 or programmatically:
 
 ```python
-llm = {
-    "model": "gpt-5.4",
-    "generate_cfg": {
-        "compact_trigger_tokens": "32k",
-    },
-}
+from researchharness import create_agent
+
+agent = create_agent(
+    model_name="gpt-5.4",
+    max_input_tokens=65536,
+    max_output_tokens=4096,
+    compact_trigger_tokens="32k",
+)
 ```
 
 ### PDF and Image Handling

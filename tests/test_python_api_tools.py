@@ -46,6 +46,19 @@ def main() -> int:
 
     explicit_agent = create_agent(
         model_name="fake-model",
+        api_key="fake-key",
+        api_base="http://fake.local/v1",
+        timeout_seconds=12.5,
+        max_input_tokens=32768,
+        max_output_tokens=4096,
+        max_retries=2,
+        temperature=0.2,
+        top_p=0.7,
+        presence_penalty=0.3,
+        compact_trigger_tokens="24k",
+        max_llm_calls=11,
+        max_rounds=12,
+        max_runtime_seconds=123,
         workspace_root=str(case_dir / "agent_workspace"),
         role_prompt="Inline role prompt.",
         role_prompt_files=str(role_file),
@@ -132,6 +145,15 @@ def main() -> int:
 
     details = {
         "explicit_tools": explicit_agent.tool_names,
+        "llm": {
+            "api_key": explicit_agent._llm_api_key,
+            "api_base": explicit_agent._llm_api_base,
+            "timeout_seconds": explicit_agent._llm_timeout_seconds,
+            "generate_cfg": explicit_agent.llm_generate_cfg,
+            "max_llm_calls": explicit_agent.max_llm_calls,
+            "max_rounds": explicit_agent.max_rounds,
+            "max_runtime_seconds": explicit_agent.max_runtime_seconds,
+        },
         "role_prompt": explicit_agent.role_prompt,
         "workspace_root": str(explicit_agent.workspace_root),
         "add_result": add_result,
@@ -149,6 +171,19 @@ def main() -> int:
 
     ok = (
         explicit_agent.tool_names == ["Read", "add_numbers", "mark_workspace"]
+        and details["llm"]["api_key"] == "fake-key"
+        and details["llm"]["api_base"] == "http://fake.local/v1"
+        and details["llm"]["timeout_seconds"] == 12.5
+        and details["llm"]["generate_cfg"]["max_input_tokens"] == 32768
+        and details["llm"]["generate_cfg"]["max_output_tokens"] == 4096
+        and details["llm"]["generate_cfg"]["max_retries"] == 2
+        and details["llm"]["generate_cfg"]["temperature"] == 0.2
+        and details["llm"]["generate_cfg"]["top_p"] == 0.7
+        and details["llm"]["generate_cfg"]["presence_penalty"] == 0.3
+        and details["llm"]["generate_cfg"]["compact_trigger_tokens"] == "24k"
+        and details["llm"]["max_llm_calls"] == 11
+        and details["llm"]["max_rounds"] == 12
+        and details["llm"]["max_runtime_seconds"] == 123
         and Bash().name not in explicit_agent.tool_names
         and explicit_agent.role_prompt == "Inline role prompt.\n\nRole file prompt."
         and explicit_agent.workspace_root == (case_dir / "agent_workspace").resolve()

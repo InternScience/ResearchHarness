@@ -122,6 +122,19 @@ pip install -e . --no-deps
 | `DEBUG_SCHOLAR` | `false` | 打印 ScholarSearch 调试日志。 |
 | `DEBUG_VISIT` | `false` | 打印 WebFetch 调试日志。 |
 
+配置优先级是：
+
+```text
+显式 Python/API/CLI 参数 > 进程环境变量 > .env > 代码默认值
+```
+
+在 Python 直接导入模式下，`create_agent(...)` 和 `run_agent(...)` 可以为当前
+agent 实例覆盖模型和运行时设置，包括 `api_key`、`api_base`、`model_name`、
+`timeout_seconds`、`max_input_tokens`、`max_output_tokens`、`max_retries`、
+`temperature`、`top_p`、`presence_penalty`、`compact_trigger_tokens`、
+`max_llm_calls`、`max_rounds` 和 `max_runtime_seconds`。CLI 模式保持命令行
+简洁，模型和采样设置主要来自进程环境变量或 `.env`。
+
 正式使用前，先运行：
 
 ```bash
@@ -211,6 +224,9 @@ agent = create_agent(
     role_prompt="Answer carefully from evidence.",
     role_prompt_files=["benchmarks/QA/role_prompt.md"],
     tools=[Read, Write, Bash, add_numbers],
+    max_input_tokens=131072,
+    max_output_tokens=4096,
+    compact_trigger_tokens="96k",
 )
 
 answer = agent.run(
@@ -222,6 +238,9 @@ answer = agent.run(
 `role_prompt` 用于传入一段内联 prompt。`role_prompt_files=[...]` 可以传入
 一个或多个文件，并按传入顺序追加，这与 CLI 中可重复使用的
 `--role-prompt-file` 语义一致。
+
+`max_input_tokens` 应与模型服务端的上下文窗口对齐，`max_output_tokens` 用于
+预留输出空间，`compact_trigger_tokens` 用于在后端拒绝超长请求前提前压缩。
 
 `tools=None` 表示使用默认工具集。`tools=[...]` 表示完整、显式的工具全集；
 没有列出的默认工具会被移除。Python 代码里优先传 `Read`、`Bash` 这类
