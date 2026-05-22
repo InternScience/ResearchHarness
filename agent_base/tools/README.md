@@ -44,6 +44,27 @@ classes such as `Read` and `Bash` plus functions decorated with
 default tool removes it for that agent. String tool names remain useful for CLI
 and config-driven adapters.
 
+For schema validation and inspection, use
+`researchharness.available_tool_schemas`. This is mainly for external adapters
+that need to validate user-defined tools and inspect OpenAI tool declarations
+without creating an agent. Prefer built-in tool classes such as `Read` and
+`Bash`, not string names, so IDE navigation and refactoring keep working.
+
+```python
+from researchharness import Bash, Read, available_tool_schemas, create_agent, tool
+
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+schemas = available_tool_schemas([Read, Bash, add_numbers])
+schema_names = [schema["function"]["name"] for schema in schemas]
+assert schema_names == ["Read", "Bash", "add_numbers"]
+
+agent = create_agent(tools=[Read, Bash, add_numbers])
+```
+
 `extra_tools` is separate: it only appends optional compatibility tools to the
 default ResearchHarness tool set and cannot be combined with `tools`.
 

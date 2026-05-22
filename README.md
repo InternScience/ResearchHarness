@@ -563,11 +563,31 @@ Tool boundaries are intentionally explicit:
 - Python code should usually pass built-in tool classes such as `Read` and
   `Bash` so IDE navigation and refactoring keep working.
 - `tools` entries can be built-in tool classes, built-in tool instances,
-  built-in tool names, `ToolBase` instances, or Python functions decorated with
-  `@researchharness.tool`.
+  `ToolBase` instances, or Python functions decorated with
+  `@researchharness.tool`. String names are accepted for config-driven
+  compatibility, but Python code should prefer classes and functions.
 - `extra_tools=[...]` appends optional compatibility tools such as
   `str_replace_editor` to the default tool set.
 - `tools` and `extra_tools` are separate modes and cannot be passed together.
+- `available_tool_schemas([...])` is an optional helper for external adapters
+  that need to validate user-defined tools and inspect OpenAI tool declarations
+  without creating an agent. Prefer passing built-in tool classes such as `Read`
+  and `Bash`, not string names, so IDE navigation and refactoring keep working.
+
+Optional schema validation/introspection:
+
+```python
+from researchharness import Bash, Read, available_tool_schemas, tool
+
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+schemas = available_tool_schemas([Read, Bash, add_numbers])
+schema_names = [schema["function"]["name"] for schema in schemas]
+assert schema_names == ["Read", "Bash", "add_numbers"]
+```
 
 For one-shot usage:
 

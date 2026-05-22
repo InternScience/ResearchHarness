@@ -21,7 +21,7 @@ from agent_base.prompt import composed_system_prompt
 from agent_base.session_state import AgentSessionState, CompactionRecord, persist_session_state, resolve_session_state_path
 from agent_base.trace_utils import FlatTraceWriter
 from agent_base.tools.custom import build_custom_tool_map
-from agent_base.tools.tooling import normalize_workspace_root
+from agent_base.tools.tooling import ToolBase, normalize_workspace_root
 from agent_base.tools.tool_extra import StrReplaceEditor
 from agent_base.tools.tool_file import Edit, Glob, Grep, Read, ReadImage, ReadPDF, Write
 from agent_base.tools.tool_runtime import Bash, TerminalInterrupt, TerminalKill, TerminalRead, TerminalStart, TerminalWrite
@@ -413,12 +413,54 @@ def resolved_tool_names(function_list: Optional[Sequence[str]]) -> list[str]:
     return resolved
 
 
-def available_tool_schemas(function_list: Optional[Sequence[str]] = None) -> list[dict[str, Any]]:
-    names = resolved_tool_names(function_list)
-    unknown_tools = [name for name in names if name not in ALL_TOOL_MAP]
-    if unknown_tools:
-        raise ValueError(f"Unknown tools requested: {unknown_tools}")
-    return [tool_schema(ALL_TOOL_MAP[name]) for name in names]
+def available_tool_schemas(tools: Optional[Sequence[Any]] = None) -> list[dict[str, Any]]:
+    """Return native tool schemas for built-in and user-provided tools.
+
+    This is a lightweight validation/introspection helper for embedding code.
+    It accepts the same Python-facing tool entry shapes as
+    create_agent(tools=[...]): built-in tool classes, ToolBase instances, or
+    functions decorated with @researchharness.tool. String names are still
+    accepted for config-driven compatibility, but Python code should prefer
+    classes and functions for navigation and refactoring.
+    """
+    if tools is None:
+        return [tool_schema(AVAILABLE_TOOL_MAP[name]) for name in AVAILABLE_TOOL_MAP]
+
+    schemas: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    def append_tool(tool_obj: Any) -> None:
+        name = str(tool_obj.name)
+        if name in seen_names:
+            raise ValueError(f"Duplicate tools requested: [{name!r}]")
+        builtin_tool = ALL_TOOL_MAP.get(name)
+        if builtin_tool is not None and tool_obj.__class__ is not builtin_tool.__class__:
+            raise ValueError(f"Custom tool names conflict with built-in tools: [{name!r}]")
+        seen_names.add(name)
+        schemas.append(tool_schema(builtin_tool or tool_obj))
+
+    for item in tools:
+        if isinstance(item, str):
+            name = item.strip()
+            if not name:
+                raise ValueError("Tool names passed to available_tool_schemas must be non-empty strings.")
+            if name not in ALL_TOOL_MAP:
+                raise ValueError(f"Unknown tools requested: [{name!r}]")
+            append_tool(ALL_TOOL_MAP[name])
+        elif isinstance(item, type) and issubclass(item, ToolBase):
+            try:
+                append_tool(item())
+            except TypeError as exc:
+                raise ValueError(
+                    f"Tool class {item.__name__} could not be instantiated without arguments; "
+                    "pass a configured instance instead."
+                ) from exc
+        elif isinstance(item, ToolBase):
+            append_tool(item)
+        else:
+            custom_tool_map = build_custom_tool_map([item])
+            append_tool(next(iter(custom_tool_map.values())))
+    return schemas
 
 
 def resolve_extra_tool_names(extra_tools: Optional[Sequence[str]]) -> list[str]:

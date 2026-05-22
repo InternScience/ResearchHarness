@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import re
 import sys
@@ -151,9 +150,6 @@ class WebSearch(ToolBase):
         content = f"A Google search for '{query}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
         return content
 
-    def search_with_serp(self, query: str):
-        return self.google_search_with_serp(query)
-
     def call(self, params: Union[str, dict], **kwargs) -> str:
         try:
             params = self.parse_json_args(params)
@@ -164,7 +160,7 @@ class WebSearch(ToolBase):
         if not isinstance(query, str) or not query.strip():
             return "[WebSearch] 'query' must be a non-empty string."
 
-        return self.search_with_serp(query.strip())
+        return self.google_search_with_serp(query.strip())
 
 
 class ScholarSearch(ToolBase):

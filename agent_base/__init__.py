@@ -1,4 +1,4 @@
-"""Lightweight trusted-local harness for tool-using research agents."""
+"""General lightweight harness for tool-using research agents."""
 
 from agent_base.base import BaseAgent, agent_role
 

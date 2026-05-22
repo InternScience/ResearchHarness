@@ -17,10 +17,12 @@ from agent_base.tools.tool_runtime import Bash, TerminalInterrupt, TerminalKill,
 from agent_base.tools.tooling import ToolBase
 from agent_base.tools.tool_user import AskUser
 from agent_base.tools.tool_web import ScholarSearch, WebFetch, WebSearch
+from agent_base.react_agent import available_tool_schemas
 from researchharness.runtime import create_agent, run_agent, tool
 
 __all__ = [
     "__version__",
+    "available_tool_schemas",
     "create_agent",
     "run_agent",
     "tool",

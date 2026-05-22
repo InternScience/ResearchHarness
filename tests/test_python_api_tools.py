@@ -17,7 +17,7 @@ from test_support import TEST_RUNS_DIR
 def main() -> int:
     import tiktoken
 
-    from researchharness import Bash, Read, create_agent, tool
+    from researchharness import Bash, Read, available_tool_schemas, create_agent, tool
 
     class FakeEncoding:
         def encode(self, text):
@@ -71,6 +71,10 @@ def main() -> int:
         {"filename": "marker.txt"},
         workspace_root=explicit_agent.workspace_root,
     )
+    standalone_schema_names = [
+        schema["function"]["name"] for schema in available_tool_schemas([Read, Bash, add_numbers])
+    ]
+    explicit_schema_names = [schema["function"]["name"] for schema in explicit_agent._native_tools]
 
     default_agent = create_agent(model_name="fake-model", require_env=False)
     no_tool_agent = create_agent(model_name="fake-model", tools=[], require_env=False)
@@ -142,6 +146,10 @@ def main() -> int:
         create_agent(model_name="fake-model", tools=[NeedsConfig], require_env=False)
     except Exception as exc:
         errors["configured_tool_class"] = str(exc)
+    try:
+        available_tool_schemas([undecorated_tool])
+    except Exception as exc:
+        errors["schema_helper_validates_custom_tools"] = str(exc)
 
     details = {
         "explicit_tools": explicit_agent.tool_names,
@@ -158,6 +166,8 @@ def main() -> int:
         "workspace_root": str(explicit_agent.workspace_root),
         "add_result": add_result,
         "marker_result": marker_result,
+        "standalone_schema_names": standalone_schema_names,
+        "explicit_schema_names": explicit_schema_names,
         "default_has_read": "Read" in default_agent.tool_names,
         "default_has_ask_user": "AskUser" in default_agent.tool_names,
         "no_tool_names": no_tool_agent.tool_names,
@@ -190,6 +200,8 @@ def main() -> int:
         and add_result == 5
         and marker_result == "marker.txt"
         and (case_dir / "agent_workspace" / "marker.txt").read_text(encoding="utf-8") == "marked"
+        and standalone_schema_names == ["Read", "Bash", "add_numbers"]
+        and explicit_schema_names == ["Read", "add_numbers", "mark_workspace"]
         and details["default_has_read"]
         and details["default_has_ask_user"]
         and no_tool_agent.tool_names == []
@@ -199,6 +211,7 @@ def main() -> int:
         and "duplicate_rejected" in errors
         and "mixed_tools_extra" in errors
         and "configured_tool_class" in errors
+        and "schema_helper_validates_custom_tools" in errors
         and image_run_result["workspace_root"] == str((case_dir / "run_workspace").resolve())
         and image_run_result["image_parts"] == 2
     )
