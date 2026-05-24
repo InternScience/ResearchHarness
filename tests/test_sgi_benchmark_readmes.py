@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+import shutil
 import shlex
 import socket
 import subprocess
@@ -18,7 +19,7 @@ if str(ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_support import bootstrap, preview, subprocess_python
+from test_support import API_TEST_RUNS_DIR, TEST_RUNS_DIR, bootstrap, preview, subprocess_python
 
 
 SGI_BENCHES = [
@@ -77,9 +78,34 @@ def extract_server_port(command: list[str]) -> int:
         raise RuntimeError("Recommended Server Command must include --port.") from exc
 
 
+def replace_arg_value(command: list[str], name: str, value: str) -> list[str]:
+    updated = list(command)
+    try:
+        index = updated.index(name)
+    except ValueError as exc:
+        raise RuntimeError(f"Recommended Server Command must include {name}.") from exc
+    if index + 1 >= len(updated):
+        raise RuntimeError(f"Recommended Server Command has {name} without a value.")
+    updated[index + 1] = value
+    return updated
+
+
 def extract_python_example(bench: str) -> str:
     text = readme_path(bench).read_text(encoding="utf-8")
     return extract_fenced_block_after_heading(text, "## OpenAI Test Example", "python")
+
+
+def replace_example_workspace(python_example: str, workspace: Path) -> str:
+    replacement = f"workspace = Path({str(workspace)!r}).resolve()"
+    updated, count = re.subn(
+        r'workspace = Path\("\./workspace/[^"]+"\)\.resolve\(\)',
+        replacement,
+        python_example,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError("README Python example must define a Path('./workspace/...').resolve() workspace.")
+    return updated
 
 
 def port_is_open(port: int) -> bool:
@@ -180,7 +206,14 @@ def run_one_bench(bench: str, server_timeout: float, client_timeout: float) -> S
             detail=f"Port {port} is already in use; stop the existing server before running this README smoke test.",
         )
 
-    python_example = extract_python_example(bench)
+    api_runs_dir = API_TEST_RUNS_DIR / "sgi_readme" / bench
+    workspace = TEST_RUNS_DIR / "sgi_readme" / bench
+    shutil.rmtree(api_runs_dir, ignore_errors=True)
+    shutil.rmtree(workspace, ignore_errors=True)
+    api_runs_dir.mkdir(parents=True, exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
+    server_command = replace_arg_value(server_command, "--api-runs-dir", str(api_runs_dir))
+    python_example = replace_example_workspace(extract_python_example(bench), workspace)
     server = subprocess.Popen(
         server_command,
         cwd=ROOT,

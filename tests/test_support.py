@@ -22,6 +22,8 @@ from agent_base.utils import MissingRequiredEnvError, load_dotenv, require_requi
 
 WORKSPACE_ROOT = ROOT / "workspace"
 TEST_RUNS_DIR = WORKSPACE_ROOT / "test_runs"
+API_RUNS_ROOT = ROOT / "api_runs"
+API_TEST_RUNS_DIR = API_RUNS_ROOT / "test_runs"
 EXAMPLE_FILES_DIR = ROOT / "tests" / "example_files"
 EXAMPLE_TEXT_FILES_DIR = EXAMPLE_FILES_DIR / "files"
 EXAMPLE_IMAGE_DIR = EXAMPLE_FILES_DIR / "images"

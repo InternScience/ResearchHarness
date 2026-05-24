@@ -63,12 +63,16 @@ inside them are ignored.
 Install the published package:
 
 ```bash
+conda create -n rh-env python=3.11
+conda activate rh-env
 pip install researchharness
 ```
 
 Or clone the repository for development:
 
 ```bash
+conda create -n rh-env python=3.11
+conda activate rh-env
 git clone https://github.com/InternScience/ResearchHarness.git
 cd ResearchHarness
 pip install -r requirements.txt
@@ -688,12 +692,6 @@ python3 tests/test_edge_case_checks.py
 python3 tests/test_extra_tools.py
 python3 tests/test_python_api_tools.py
 python3 tests/test_toolchain_validation.py
-```
-
-If using conda:
-
-```bash
-/home/xwh/miniconda3/bin/conda run -n agent python3 tests/test_openai_api_checks.py
 ```
 
 ## 13. Troubleshooting

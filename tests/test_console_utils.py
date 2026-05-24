@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from agent_base.console_utils import ConsoleEventPrinter
 from agent_base.console_utils import _display_width
+from test_support import TEST_RUNS_DIR
 
 
 @dataclass
@@ -35,7 +36,7 @@ def main() -> int:
         with contextlib.redirect_stdout(buffer):
             printer = ConsoleEventPrinter(
                 model_name="demo-model",
-                workspace_root=Path("/tmp/demo-workspace"),
+                workspace_root=TEST_RUNS_DIR / "console_utils" / "demo",
                 prompt="Summarize **this** task.",
             )
             printer.print_header()
@@ -73,7 +74,7 @@ def main() -> int:
         with contextlib.redirect_stdout(cjk_buffer):
             cjk_printer = ConsoleEventPrinter(
                 model_name="gpt-5.4",
-                workspace_root=Path("/mnt/d/xwh/ailab记录/工作/26年04月/ResearchHarness/workspace"),
+                workspace_root=TEST_RUNS_DIR / "console_utils" / "cjk",
                 prompt="Who proposed the transformer architecture, and in what year was the paper published?",
             )
             cjk_printer.print_header()

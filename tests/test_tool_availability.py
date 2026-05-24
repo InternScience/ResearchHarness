@@ -23,6 +23,8 @@ from test_support import (
     required_test_pdf,
 )
 
+__test__ = False
+
 
 DEFAULT_VISIT_URL = "https://en.wikipedia.org/wiki/Attention_Is_All_You_Need"
 NETWORK_TOOL_NAMES = {"WebSearch", "ScholarSearch", "WebFetch", "ReadPDF"}

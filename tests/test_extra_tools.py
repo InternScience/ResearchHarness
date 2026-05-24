@@ -59,7 +59,7 @@ def main() -> int:
     )
     undo_create_result = tool.call({"command": "undo_edit", "path": str(created)}, workspace_root=case_dir)
     boundary_result = tool.call(
-        {"command": "view", "path": "/tmp/researchharness_outside_extra_tool.txt"},
+        {"command": "view", "path": str(ROOT / "outside_extra_tool.txt")},
         workspace_root=case_dir,
     )
 

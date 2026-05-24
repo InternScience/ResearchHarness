@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from test_support import TEST_RUNS_DIR, bootstrap, load_trace_records, preview, single_trace_path
+from test_support import API_TEST_RUNS_DIR, TEST_RUNS_DIR, bootstrap, load_trace_records, preview, single_trace_path
 
 
 TMP_DIR = TEST_RUNS_DIR / "openai_api_checks"
@@ -133,7 +133,9 @@ def main() -> int:
     first_user_trace = rows[1].get("text", "") if len(rows) > 1 else ""
     session_state_path = Path(session.get("session_state_path", ""))
 
-    api_runs_root = TMP_DIR / "api_runs"
+    api_runs_root = API_TEST_RUNS_DIR / "openai_api_checks"
+    shutil.rmtree(api_runs_root, ignore_errors=True)
+    api_runs_root.mkdir(parents=True, exist_ok=True)
     fake_seen: dict[str, str] = {}
 
     class FakeAPIAgent:

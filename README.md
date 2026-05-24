@@ -275,12 +275,16 @@ Use any Python environment manager you prefer:
 Install from PyPI:
 
 ```bash
+conda create -n rh-env python=3.11
+conda activate rh-env
 pip install researchharness
 ```
 
 Or install from source for development:
 
 ```bash
+conda create -n rh-env python=3.11
+conda activate rh-env
 git clone https://github.com/InternScience/ResearchHarness.git
 cd ResearchHarness
 pip install -r requirements.txt

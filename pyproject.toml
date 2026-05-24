@@ -66,3 +66,6 @@ namespaces = true
 agent_base = ["prompts/*.md", "prompts/**/*.md"]
 frontend = ["static/*"]
 benchmarks = ["**/*.md", "**/*.png"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
