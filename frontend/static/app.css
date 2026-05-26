@@ -425,6 +425,8 @@ button {
 }
 
 .message-body {
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
 }
 
@@ -435,6 +437,8 @@ button {
 }
 
 .event-body-inner {
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
 }
 
@@ -481,6 +485,9 @@ button {
 }
 
 .markdown-body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   line-height: 1.6;
   word-break: break-word;
 }
@@ -562,13 +569,16 @@ button {
 
 .markdown-body img {
   display: block;
+  width: auto;
   max-width: 100%;
   height: auto;
   margin: 0.65rem 0;
   border-radius: 14px;
+  object-fit: contain;
 }
 
 .mermaid-chart {
+  max-width: 100%;
   margin: 0.85rem 0;
   overflow-x: auto;
 }

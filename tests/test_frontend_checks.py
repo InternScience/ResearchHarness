@@ -132,6 +132,9 @@ def test_frontend_workspace_file_endpoint_serves_only_scoped_images(tmp_path: Pa
     image_path = tmp_path / "outputs" / "demo image.png"
     image_path.parent.mkdir()
     image_path.write_bytes(b"png-bytes")
+    svg_path = tmp_path / "assets" / "workflow.svg"
+    svg_path.parent.mkdir()
+    svg_path.write_text("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>", encoding="utf-8")
     outside = tmp_path.parent / f"outside-{tmp_path.name}.png"
     outside.write_bytes(b"outside")
     token = _register_file_workspace(tmp_path)
@@ -141,6 +144,9 @@ def test_frontend_workspace_file_endpoint_serves_only_scoped_images(tmp_path: Pa
             response = client.get("/api/workspace-file", params={"token": token, "path": path})
             assert response.status_code == 200
             assert response.content == b"png-bytes"
+        svg_response = client.get("/api/workspace-file", params={"token": token, "path": "assets/workflow.svg"})
+        assert svg_response.status_code == 200
+        assert b"<svg" in svg_response.content
         outside_response = client.get("/api/workspace-file", params={"token": token, "path": str(outside)})
         assert outside_response.status_code == 403
         missing_token_response = client.get("/api/workspace-file", params={"token": "missing", "path": "outputs/demo image.png"})
@@ -226,10 +232,13 @@ def test_frontend_static_interaction_contract() -> None:
     assert 'addMessage("user", answer, [])' in js
     assert "function renderMarkdown(text)" in js
     assert "rewriteWorkspaceImageSources" in js
+    assert "normalizeMarkdownImageDestinations" in js
     assert "unwrapFullMarkdownFence" in js
     assert "markdown|md|gfm" in js
     assert "renderMermaidInMarkdown" in js
     assert "language-mermaid" in js
+    assert "language-mmd" in js
+    assert "lang-mmd" in js
     assert "securityLevel: \"strict\"" in js
     assert "renderMermaidInMarkdown(node)" in js
     assert "/api/workspace-file" in js
@@ -273,6 +282,7 @@ def test_frontend_static_interaction_contract() -> None:
     assert ".event.can-collapse.collapsed .event-body-inner::after" in css
     assert ".event.collapsed .event-body-inner::after" not in css
     assert ".markdown-body" in css
+    assert "object-fit: contain" in css
     assert ".markdown-body table" in css
     assert ".mermaid-chart" in css
     assert ".event.can-collapse" in css

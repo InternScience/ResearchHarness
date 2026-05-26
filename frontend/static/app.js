@@ -205,6 +205,15 @@
     return template.innerHTML;
   }
 
+  function normalizeMarkdownImageDestinations(text) {
+    return String(text || "").replace(/!\[([^\]\n]*)\]\(([^)\n]+)\)/g, function (match, alt, target) {
+      var src = String(target || "").trim();
+      if (!src || src[0] === "<" || !/\s/.test(src) || isRemoteOrInlineImageSrc(src)) return match;
+      if (/[<>]/.test(src)) return match;
+      return "![" + alt + "](<" + src + ">)";
+    });
+  }
+
   function unwrapFullMarkdownFence(text) {
     var source = String(text || "").trim();
     var match = /^(```|~~~)[ \t]*(markdown|md|gfm)[^\n]*\n([\s\S]*?)\n\1[ \t]*$/i.exec(source);
@@ -238,7 +247,11 @@
       console.warn("Mermaid initialization failed.", e);
       return;
     }
-    container.querySelectorAll(".markdown-body pre code.language-mermaid").forEach(function (code) {
+    container.querySelectorAll(".markdown-body pre code").forEach(function (code) {
+      var className = String(code.className || "").toLowerCase();
+      if (!className.split(/\s+/).some(function (name) {
+        return name === "language-mermaid" || name === "lang-mermaid" || name === "language-mmd" || name === "lang-mmd";
+      })) return;
       var pre = code.closest("pre");
       if (!pre) return;
       var source = code.textContent || "";
@@ -260,7 +273,8 @@
       return "<pre>" + escapeHtml(text) + "</pre>";
     }
     try {
-      var protectedMath = protectMathSegments(unwrapFullMarkdownFence(text));
+      var normalizedText = normalizeMarkdownImageDestinations(unwrapFullMarkdownFence(text));
+      var protectedMath = protectMathSegments(normalizedText);
       var rawHtml = window.marked.parse(protectedMath.text, { gfm: true, breaks: false, async: false });
       rawHtml = rewriteWorkspaceImageSources(rawHtml);
       var safeHtml = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });

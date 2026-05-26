@@ -161,7 +161,7 @@ def _resolve_workspace_file_path(workspace_root: Path, raw_path: str) -> Path:
         raise HTTPException(status_code=403, detail="workspace file path is outside the workspace") from exc
     if not resolved.is_file():
         raise HTTPException(status_code=404, detail="workspace file does not exist")
-    if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+    if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}:
         raise HTTPException(status_code=415, detail="only workspace image files can be displayed inline")
     return resolved
 
