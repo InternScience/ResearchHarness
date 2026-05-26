@@ -9,9 +9,10 @@ import threading
 import traceback
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 from uuid import uuid4
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -40,6 +41,8 @@ MAX_DIRECTORY_ENTRIES = 800
 FRONTEND_ROLE_PROMPT = ""
 FRONTEND_TRACE_DIR: str | None = None
 FRONTEND_EXTRA_TOOLS: tuple[str, ...] = ()
+_FILE_WORKSPACES: dict[str, str] = {}
+_FILE_WORKSPACES_LOCK = threading.Lock()
 
 app = FastAPI(title="ResearchHarness Local UI")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="frontend-static")
@@ -71,6 +74,7 @@ class FrontendRunBridge:
         self.cancelled = threading.Event()
         self.conversation_messages: list[dict[str, Any]] | None = None
         self.conversation_workspace_root: str = ""
+        self.file_token: str = ""
         self._pending_answers: dict[str, str] = {}
         self._pending_events: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
@@ -113,6 +117,53 @@ class FrontendRunBridge:
         if not answer:
             return "[AskUser] User answer was empty."
         return f"[AskUser] User answer:\n{answer}"
+
+
+def _register_file_workspace(workspace_root: Path, token: str = "") -> str:
+    token = token or uuid4().hex
+    with _FILE_WORKSPACES_LOCK:
+        _FILE_WORKSPACES[token] = str(workspace_root.resolve())
+    return token
+
+
+def _unregister_file_workspace(token: str) -> None:
+    if not token:
+        return
+    with _FILE_WORKSPACES_LOCK:
+        _FILE_WORKSPACES.pop(token, None)
+
+
+def _workspace_for_file_token(token: str) -> Path:
+    with _FILE_WORKSPACES_LOCK:
+        workspace_text = _FILE_WORKSPACES.get(str(token or ""))
+    if not workspace_text:
+        raise HTTPException(status_code=404, detail="No workspace file token is available for this chat.")
+    workspace_root = Path(workspace_text).resolve()
+    if not workspace_root.is_dir():
+        raise HTTPException(status_code=404, detail="The workspace is no longer available.")
+    return workspace_root
+
+
+def _resolve_workspace_file_path(workspace_root: Path, raw_path: str) -> Path:
+    text = str(raw_path or "").strip()
+    if text.startswith("file://"):
+        text = text[7:]
+    text = unquote(text)
+    if not text:
+        raise HTTPException(status_code=400, detail="workspace file path is required")
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        candidate = workspace_root / text
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(workspace_root.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="workspace file path is outside the workspace") from exc
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="workspace file does not exist")
+    if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+        raise HTTPException(status_code=415, detail="only workspace image files can be displayed inline")
+    return resolved
 
 
 class FrontendInteractiveAgent(MultiTurnReactAgent):
@@ -222,6 +273,7 @@ def _run_agent_thread(
                 "model": agent.model,
                 "workspace_root": str(workspace_root),
                 "trace_dir": FRONTEND_TRACE_DIR or "",
+                "file_token": bridge.file_token,
             }
         )
         result = agent._run_session(
@@ -349,6 +401,12 @@ def favicon() -> FileResponse:
     return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
+@app.get("/api/workspace-file")
+def workspace_file(token: str, path: str) -> FileResponse:
+    workspace_root = _workspace_for_file_token(token)
+    return FileResponse(_resolve_workspace_file_path(workspace_root, path))
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -396,6 +454,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 except ValueError as exc:
                     bridge.send({"type": "run_error", "error": str(exc)})
                     continue
+                bridge.file_token = _register_file_workspace(workspace_root, bridge.file_token)
                 bridge.cancelled.clear()
                 if not continue_conversation:
                     bridge.conversation_messages = None
@@ -430,6 +489,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 if run_thread is not None and run_thread.is_alive():
                     bridge.send({"type": "run_error", "error": "The current run is still active. Start a new conversation after it finishes."})
                 else:
+                    _unregister_file_workspace(bridge.file_token)
+                    bridge.file_token = ""
                     bridge.conversation_messages = None
                     bridge.conversation_workspace_root = ""
                     bridge.send({"type": "conversation_reset"})
@@ -439,4 +500,5 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         bridge.cancelled.set()
     finally:
         bridge.cancelled.set()
+        _unregister_file_workspace(bridge.file_token)
         sender_task.cancel()

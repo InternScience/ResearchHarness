@@ -14,6 +14,7 @@ from frontend.local_server import (
     decode_image_data_url,
     save_uploaded_images,
     _resolve_existing_workspace,
+    _resolve_workspace_file_path,
     _workspace_directory_payload,
 )
 
@@ -92,6 +93,36 @@ def test_frontend_workspace_picker_supports_unicode_paths(tmp_path: Path) -> Non
     assert str(child) in paths
 
 
+def test_frontend_workspace_file_paths_are_scoped_to_workspace(tmp_path: Path) -> None:
+    image_path = tmp_path / "outputs" / "plot.png"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"png")
+    spaced_path = tmp_path / "outputs" / "demo image.png"
+    spaced_path.write_bytes(b"png")
+
+    assert _resolve_workspace_file_path(tmp_path, "outputs/plot.png") == image_path.resolve()
+    assert _resolve_workspace_file_path(tmp_path, str(image_path)) == image_path.resolve()
+    assert _resolve_workspace_file_path(tmp_path, "outputs/demo%20image.png") == spaced_path.resolve()
+
+    outside = tmp_path.parent / "outside.png"
+    outside.write_bytes(b"png")
+    try:
+        _resolve_workspace_file_path(tmp_path, str(outside))
+    except Exception as exc:
+        assert "outside the workspace" in str(exc)
+    else:
+        raise AssertionError("expected outside workspace file to be rejected")
+
+    text_file = tmp_path / "outputs" / "note.txt"
+    text_file.write_text("not an image", encoding="utf-8")
+    try:
+        _resolve_workspace_file_path(tmp_path, "outputs/note.txt")
+    except Exception as exc:
+        assert "image files" in str(exc)
+    else:
+        raise AssertionError("expected non-image file to be rejected")
+
+
 def test_frontend_configures_trace_dir(tmp_path: Path) -> None:
     trace_dir = tmp_path / "frontend-traces"
     configure_frontend(role_prompt="Extra role guidance.", trace_dir=str(trace_dir))
@@ -167,6 +198,9 @@ def test_frontend_static_interaction_contract() -> None:
     assert "Interrupting" in js
     assert 'addMessage("user", answer, [])' in js
     assert "function renderMarkdown(text)" in js
+    assert "rewriteWorkspaceImageSources" in js
+    assert "/api/workspace-file" in js
+    assert '"file_token"' in server
     assert "window.marked.parse" in js
     assert "window.DOMPurify.sanitize" in js
     assert '!tools.length && row.termination === "result"' in js
@@ -232,6 +266,9 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as tmp:
             test_frontend_workspace_picker_supports_unicode_paths(Path(tmp))
         outputs.append("unicode workspace picker: ok")
+        with tempfile.TemporaryDirectory() as tmp:
+            test_frontend_workspace_file_paths_are_scoped_to_workspace(Path(tmp))
+        outputs.append("workspace image path scoping: ok")
         with tempfile.TemporaryDirectory() as tmp:
             test_frontend_configures_trace_dir(Path(tmp))
         outputs.append("frontend trace-dir config: ok")

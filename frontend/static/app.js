@@ -158,6 +158,7 @@
   var workspaceUseBtn = document.getElementById("workspaceUseBtn");
   var workspacePickerHint = document.getElementById("workspacePickerHint");
   var currentWorkspacePath = "";
+  var fileToken = "";
   var defaultPromptPlaceholder = promptInput.getAttribute("placeholder") || "Message ResearchHarness";
 
   function escapeHtml(value) {
@@ -187,6 +188,22 @@
     return restored;
   }
 
+  function isRemoteOrInlineImageSrc(src) {
+    return /^(https?:|data:|blob:|#|\/api\/|\/static\/)/i.test(String(src || "").trim());
+  }
+
+  function rewriteWorkspaceImageSources(html) {
+    if (!fileToken) return html;
+    var template = document.createElement("template");
+    template.innerHTML = html;
+    template.content.querySelectorAll("img").forEach(function (img) {
+      var src = img.getAttribute("src") || "";
+      if (!src || isRemoteOrInlineImageSrc(src)) return;
+      img.setAttribute("src", "/api/workspace-file?token=" + encodeURIComponent(fileToken) + "&path=" + encodeURIComponent(src));
+    });
+    return template.innerHTML;
+  }
+
   function renderMathInMarkdown(container) {
     if (!window.renderMathInElement) return;
     container.querySelectorAll(".markdown-body").forEach(function (body) {
@@ -214,6 +231,7 @@
     try {
       var protectedMath = protectMathSegments(text);
       var rawHtml = window.marked.parse(protectedMath.text, { gfm: true, breaks: false, async: false });
+      rawHtml = rewriteWorkspaceImageSources(rawHtml);
       var safeHtml = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
       safeHtml = restoreMathSegments(safeHtml, protectedMath.segments);
       return '<div class="markdown-body">' + safeHtml + "</div>";
@@ -534,6 +552,7 @@
       setStatus("Connected", "idle");
     };
     ws.onclose = function () {
+      fileToken = "";
       clearAskRequest();
       setRunning(false, "Disconnected");
       setStatus("Disconnected", "error");
@@ -543,6 +562,7 @@
       if (message.type === "ready") {
         setStatus("Connected", "idle");
       } else if (message.type === "conversation_reset") {
+        fileToken = "";
         if (keepSubmittedMessageOnReset) {
           keepSubmittedMessageOnReset = false;
           ensureTimelineReady();
@@ -554,6 +574,7 @@
       } else if (message.type === "uploaded_images") {
         addEvent("runtime", "Uploaded images saved", "<pre>" + escapeHtml((message.paths || []).join("\n")) + "</pre>", []);
       } else if (message.type === "run_started") {
+        fileToken = message.file_token || "";
         setRunning(true, "Running");
       } else if (message.type === "interrupt_requested") {
         interrupting = true;
