@@ -5,16 +5,21 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from frontend.local_server import (
+    app,
     configure_frontend,
     decode_image_data_url,
     save_uploaded_images,
+    _register_file_workspace,
     _resolve_existing_workspace,
     _resolve_workspace_file_path,
+    _unregister_file_workspace,
     _workspace_directory_payload,
 )
 
@@ -123,6 +128,28 @@ def test_frontend_workspace_file_paths_are_scoped_to_workspace(tmp_path: Path) -
         raise AssertionError("expected non-image file to be rejected")
 
 
+def test_frontend_workspace_file_endpoint_serves_only_scoped_images(tmp_path: Path) -> None:
+    image_path = tmp_path / "outputs" / "demo image.png"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"png-bytes")
+    outside = tmp_path.parent / f"outside-{tmp_path.name}.png"
+    outside.write_bytes(b"outside")
+    token = _register_file_workspace(tmp_path)
+    client = TestClient(app)
+    try:
+        for path in ("outputs/demo image.png", "outputs/demo%20image.png", str(image_path)):
+            response = client.get("/api/workspace-file", params={"token": token, "path": path})
+            assert response.status_code == 200
+            assert response.content == b"png-bytes"
+        outside_response = client.get("/api/workspace-file", params={"token": token, "path": str(outside)})
+        assert outside_response.status_code == 403
+        missing_token_response = client.get("/api/workspace-file", params={"token": "missing", "path": "outputs/demo image.png"})
+        assert missing_token_response.status_code == 404
+    finally:
+        _unregister_file_workspace(token)
+        outside.unlink(missing_ok=True)
+
+
 def test_frontend_configures_trace_dir(tmp_path: Path) -> None:
     trace_dir = tmp_path / "frontend-traces"
     configure_frontend(role_prompt="Extra role guidance.", trace_dir=str(trace_dir))
@@ -199,6 +226,12 @@ def test_frontend_static_interaction_contract() -> None:
     assert 'addMessage("user", answer, [])' in js
     assert "function renderMarkdown(text)" in js
     assert "rewriteWorkspaceImageSources" in js
+    assert "unwrapFullMarkdownFence" in js
+    assert "markdown|md|gfm" in js
+    assert "renderMermaidInMarkdown" in js
+    assert "language-mermaid" in js
+    assert "securityLevel: \"strict\"" in js
+    assert "renderMermaidInMarkdown(node)" in js
     assert "/api/workspace-file" in js
     assert '"file_token"' in server
     assert "window.marked.parse" in js
@@ -214,6 +247,7 @@ def test_frontend_static_interaction_contract() -> None:
     assert 'class="space-links"' in html
     assert "marked@15.0.12/marked.min.js" in html
     assert "dompurify@3.2.6/dist/purify.min.js" in html
+    assert "mermaid@11.12.0/dist/mermaid.min.js" in html
     assert 'eventNode.classList.add("collapsed")' not in js
     assert 'node.classList.contains("latest")' in js
     assert "event.isComposing" in js
@@ -240,6 +274,7 @@ def test_frontend_static_interaction_contract() -> None:
     assert ".event.collapsed .event-body-inner::after" not in css
     assert ".markdown-body" in css
     assert ".markdown-body table" in css
+    assert ".mermaid-chart" in css
     assert ".event.can-collapse" in css
     assert ".event:not(.can-collapse) .event-toggle" in css
     assert ".space-links" in css
@@ -269,6 +304,9 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as tmp:
             test_frontend_workspace_file_paths_are_scoped_to_workspace(Path(tmp))
         outputs.append("workspace image path scoping: ok")
+        with tempfile.TemporaryDirectory() as tmp:
+            test_frontend_workspace_file_endpoint_serves_only_scoped_images(Path(tmp))
+        outputs.append("workspace image endpoint: ok")
         with tempfile.TemporaryDirectory() as tmp:
             test_frontend_configures_trace_dir(Path(tmp))
         outputs.append("frontend trace-dir config: ok")

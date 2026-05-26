@@ -160,6 +160,7 @@
   var currentWorkspacePath = "";
   var fileToken = "";
   var defaultPromptPlaceholder = promptInput.getAttribute("placeholder") || "Message ResearchHarness";
+  var mermaidCounter = 0;
 
   function escapeHtml(value) {
     return String(value || "")
@@ -204,6 +205,12 @@
     return template.innerHTML;
   }
 
+  function unwrapFullMarkdownFence(text) {
+    var source = String(text || "").trim();
+    var match = /^(```|~~~)[ \t]*(markdown|md|gfm)[^\n]*\n([\s\S]*?)\n\1[ \t]*$/i.exec(source);
+    return match ? match[3] : text;
+  }
+
   function renderMathInMarkdown(container) {
     if (!window.renderMathInElement) return;
     container.querySelectorAll(".markdown-body").forEach(function (body) {
@@ -223,13 +230,37 @@
     });
   }
 
+  function renderMermaidInMarkdown(container) {
+    if (!window.mermaid) return;
+    try {
+      window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+    } catch (e) {
+      console.warn("Mermaid initialization failed.", e);
+      return;
+    }
+    container.querySelectorAll(".markdown-body pre code.language-mermaid").forEach(function (code) {
+      var pre = code.closest("pre");
+      if (!pre) return;
+      var source = code.textContent || "";
+      var target = document.createElement("div");
+      var id = "rh-mermaid-" + (++mermaidCounter);
+      target.className = "mermaid-chart";
+      window.mermaid.render(id, source).then(function (result) {
+        target.innerHTML = result.svg || "";
+        pre.replaceWith(target);
+      }).catch(function (e) {
+        console.warn("Mermaid rendering failed.", e);
+      });
+    });
+  }
+
   function renderMarkdown(text) {
     if (!window.marked || !window.DOMPurify) {
       console.warn("Markdown renderer unavailable; falling back to plain text.");
       return "<pre>" + escapeHtml(text) + "</pre>";
     }
     try {
-      var protectedMath = protectMathSegments(text);
+      var protectedMath = protectMathSegments(unwrapFullMarkdownFence(text));
       var rawHtml = window.marked.parse(protectedMath.text, { gfm: true, breaks: false, async: false });
       rawHtml = rewriteWorkspaceImageSources(rawHtml);
       var safeHtml = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
@@ -464,6 +495,7 @@
     });
     timeline.appendChild(node);
     renderMathInMarkdown(node);
+    renderMermaidInMarkdown(node);
     setEventExpanded(node, true, false);
     scrollTimeline(shouldFollow);
   }

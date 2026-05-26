@@ -568,6 +568,16 @@ button {
   border-radius: 14px;
 }
 
+.mermaid-chart {
+  margin: 0.85rem 0;
+  overflow-x: auto;
+}
+
+.mermaid-chart svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .markdown-body table {
   width: 100%;
   border-collapse: collapse;
