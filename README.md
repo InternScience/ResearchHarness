@@ -125,7 +125,7 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-04-25) ResearchHarness now supports built-in context compaction for long multi-step tasks instead of relying only on a growing raw message list.
 
-🚩 **Update** (2026-04-25) The default compaction trigger is `128k`, and you can override it with `AUTO_COMPACT_TRIGGER_TOKENS=16k` or `create_agent(compact_trigger_tokens="32k")`.
+🚩 **Update** (2026-04-25) The default compaction trigger is `128k`, and you can override it with `COMPACT_TRIGGER_TOKENS=16k` or `create_agent(compact_trigger_tokens="32k")`.
 
 🚩 **Update** (2026-04-25) The existing `trace_*.jsonl` format now records full `llm_call` and `compaction` payloads in the same file, so reasoning context, tool environment, and memory-compression steps can all be reused for training or distillation.
 
@@ -343,19 +343,18 @@ Required variables:
 Optional variables:
 
 - `WORKSPACE_ROOT`
-- `MAX_LLM_CALL_PER_RUN`
-- `MAX_AGENT_ROUNDS`
-- `MAX_AGENT_RUNTIME_SECONDS`
-- `LLM_TIMEOUT_SECONDS`
+- `MAX_ROUNDS`
+- `MAX_RUNTIME_SECONDS`
+- `TIMEOUT_SECONDS`
 - `WEBFETCH_TIMEOUT_SECONDS`
 - `WEBFETCH_MAX_CHARS`
-- `LLM_MAX_OUTPUT_TOKENS`
+- `MAX_OUTPUT_TOKENS`
 - `MAX_INPUT_TOKENS`
-- `LLM_MAX_RETRIES`
+- `MAX_RETRIES`
 - `TEMPERATURE`
 - `TOP_P`
 - `PRESENCE_PENALTY`
-- `AUTO_COMPACT_TRIGGER_TOKENS`
+- `COMPACT_TRIGGER_TOKENS`
 - `IMAGE_PART_TOKEN_ESTIMATE`
 - `LLM_IMAGE_MAX_EDGE`
 - `LLM_IMAGE_MAX_BYTES`
@@ -393,8 +392,11 @@ Details:
   arguments win for that agent instance. This includes `api_key`, `api_base`,
   `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
   `max_retries`, `temperature`, `top_p`, `presence_penalty`,
-  `compact_trigger_tokens`, `max_llm_calls`, `max_rounds`, and
+  `compact_trigger_tokens`, `max_rounds`, and
   `max_runtime_seconds`.
+- Environment variables for these runtime settings use the upper-case form of
+  the Python argument name, for example `max_rounds` -> `MAX_ROUNDS` and
+  `compact_trigger_tokens` -> `COMPACT_TRIGGER_TOKENS`.
 - If a setting exists both as a command-line argument and an environment-level
   default, the command-line argument wins for that run. For example,
   `--workspace-root` overrides `WORKSPACE_ROOT`.
@@ -418,8 +420,8 @@ Details:
   `--no-chat` for one-shot behavior or `--chat` to force follow-up mode.
 - CLI mode intentionally keeps the command surface compact. Model and sampling
   settings such as `API_KEY`, `API_BASE`, `MODEL_NAME`, `TEMPERATURE`,
-  `MAX_INPUT_TOKENS`, `LLM_MAX_OUTPUT_TOKENS`, and
-  `AUTO_COMPACT_TRIGGER_TOKENS` come from process environment variables or
+  `MAX_INPUT_TOKENS`, `MAX_OUTPUT_TOKENS`, and
+  `COMPACT_TRIGGER_TOKENS` come from process environment variables or
   `.env` in CLI mode. Use the Python API when these need to be set
   programmatically per agent.
 
@@ -1036,7 +1038,7 @@ exhausted. By default, the trigger budget is `128k`. You can override it when
 you want earlier or later compaction:
 
 ```bash
-AUTO_COMPACT_TRIGGER_TOKENS=16k python3 run_agent.py "your prompt"
+COMPACT_TRIGGER_TOKENS=16k python3 run_agent.py "your prompt"
 ```
 
 or programmatically:

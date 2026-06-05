@@ -70,7 +70,6 @@ OPTIONAL_TOOL_MAP = {tool.name: tool for tool in OPTIONAL_TOOLS}
 ALL_TOOL_MAP = {**AVAILABLE_TOOL_MAP, **OPTIONAL_TOOL_MAP}
 DEFAULT_IMAGE_TOKEN_ESTIMATE = 1536
 DEFAULT_MODEL_NAME = "gpt-5.4"
-DEFAULT_MAX_LLM_CALLS = 100
 DEFAULT_MAX_ROUNDS = 100
 DEFAULT_MAX_RUNTIME_SECONDS = 150 * 60
 DEFAULT_MAX_OUTPUT_TOKENS = 10000
@@ -79,7 +78,7 @@ DEFAULT_MAX_RETRIES = 10
 DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
 DEFAULT_PRESENCE_PENALTY = 1.1
-DEFAULT_LLM_TIMEOUT_SECONDS = 600.0
+DEFAULT_TIMEOUT_SECONDS = 600.0
 MAX_PARALLEL_READ_TOOL_CALLS = 3
 PARALLEL_READ_TOOL_NAMES = frozenset(
     {
@@ -132,20 +131,16 @@ def today_date():
     return datetime.date.today().strftime("%Y-%m-%d")
 
 
-def max_llm_calls_per_run() -> int:
-    return int(os.getenv("MAX_LLM_CALL_PER_RUN", str(DEFAULT_MAX_LLM_CALLS)))
-
-
 def max_agent_rounds() -> int:
-    return int(os.getenv("MAX_AGENT_ROUNDS", str(DEFAULT_MAX_ROUNDS)))
+    return int(os.getenv("MAX_ROUNDS", str(DEFAULT_MAX_ROUNDS)))
 
 
 def max_agent_runtime_seconds() -> int:
-    return int(os.getenv("MAX_AGENT_RUNTIME_SECONDS", str(DEFAULT_MAX_RUNTIME_SECONDS)))
+    return int(os.getenv("MAX_RUNTIME_SECONDS", str(DEFAULT_MAX_RUNTIME_SECONDS)))
 
 
-def llm_max_output_tokens() -> int:
-    return int(os.getenv("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+def max_output_tokens_default() -> int:
+    return int(os.getenv("MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
 
 
 def remaining_runtime_seconds(runtime_deadline: Optional[float]) -> Optional[float]:
@@ -641,11 +636,11 @@ def default_llm_config(model_name: Optional[str] = None) -> dict:
         "model": selected_model,
         "api_key": os.environ.get("API_KEY", "EMPTY"),
         "api_base": os.environ.get("API_BASE"),
-        "timeout_seconds": float(os.environ.get("LLM_TIMEOUT_SECONDS", str(DEFAULT_LLM_TIMEOUT_SECONDS))),
+        "timeout_seconds": float(os.environ.get("TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS))),
         "generate_cfg": {
             "max_input_tokens": int(os.environ.get("MAX_INPUT_TOKENS", str(DEFAULT_MAX_INPUT_TOKENS))),
-            "max_output_tokens": int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS))),
-            "max_retries": int(os.environ.get("LLM_MAX_RETRIES", str(DEFAULT_MAX_RETRIES))),
+            "max_output_tokens": int(os.environ.get("MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS))),
+            "max_retries": int(os.environ.get("MAX_RETRIES", str(DEFAULT_MAX_RETRIES))),
             "temperature": float(os.environ.get("TEMPERATURE", str(DEFAULT_TEMPERATURE))),
             "top_p": float(os.environ.get("TOP_P", str(DEFAULT_TOP_P))),
             "presence_penalty": float(os.environ.get("PRESENCE_PENALTY", str(DEFAULT_PRESENCE_PENALTY))),
@@ -701,7 +696,6 @@ class MultiTurnReactAgent(BaseAgent):
         role_prompt: Optional[str] = None,
         workspace_root: Optional[str] = None,
         custom_tools: Optional[Sequence[Any]] = None,
-        max_llm_calls: Optional[int] = None,
         max_rounds: Optional[int] = None,
         max_runtime_seconds: Optional[int] = None,
     ):
@@ -743,7 +737,6 @@ class MultiTurnReactAgent(BaseAgent):
         self.session_state_path: Optional[Path] = None
         self.role_prompt = self.resolve_role_prompt(role_prompt)
         self.workspace_root = normalize_workspace_root(workspace_root) if workspace_root else None
-        self.max_llm_calls = int(max_llm_calls) if max_llm_calls is not None else max_llm_calls_per_run()
         self.max_rounds = int(max_rounds) if max_rounds is not None else max_agent_rounds()
         self.max_runtime_seconds = (
             int(max_runtime_seconds) if max_runtime_seconds is not None else max_agent_runtime_seconds()
@@ -756,7 +749,7 @@ class MultiTurnReactAgent(BaseAgent):
             self._encoding.encode(json.dumps(self._native_tools, ensure_ascii=False))
         )
         self._llm_timeout_seconds = float(
-            llm.get("timeout_seconds", os.getenv("LLM_TIMEOUT_SECONDS", str(DEFAULT_LLM_TIMEOUT_SECONDS)))
+            llm.get("timeout_seconds", os.getenv("TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)))
         )
         self._llm_api_key = str(llm.get("api_key") or os.environ.get("API_KEY", "EMPTY"))
         api_base = str(llm.get("api_base") or os.environ.get("API_BASE", "")).strip()
@@ -809,7 +802,7 @@ class MultiTurnReactAgent(BaseAgent):
                     max_tokens=int(
                         max_output_tokens
                         if max_output_tokens is not None
-                        else self.llm_generate_cfg.get("max_output_tokens", llm_max_output_tokens())
+                        else self.llm_generate_cfg.get("max_output_tokens", max_output_tokens_default())
                     ),
                 )
                 apply_sampling_params(
@@ -1015,12 +1008,11 @@ class MultiTurnReactAgent(BaseAgent):
             messages.append({"role": "user", "content": user_content})
         else:
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
-        max_llm_calls = self.max_llm_calls
         max_input_tokens = int(self.llm_generate_cfg.get("max_input_tokens", DEFAULT_MAX_INPUT_TOKENS))
-        max_output_tokens = int(self.llm_generate_cfg.get("max_output_tokens", llm_max_output_tokens()))
+        max_output_tokens = int(self.llm_generate_cfg.get("max_output_tokens", max_output_tokens_default()))
         compact_trigger_tokens = self.llm_generate_cfg.get("compact_trigger_tokens")
         if compact_trigger_tokens is None:
-            compact_trigger_tokens = os.getenv("AUTO_COMPACT_TRIGGER_TOKENS", "128k")
+            compact_trigger_tokens = os.getenv("COMPACT_TRIGGER_TOKENS", "128k")
         model_profile = resolve_model_profile(
             self.model,
             configured_max_input_tokens=max_input_tokens,
@@ -1029,7 +1021,6 @@ class MultiTurnReactAgent(BaseAgent):
         )
         agent_runtime_limit = self.max_runtime_seconds
         runtime_deadline = start_time + agent_runtime_limit
-        num_llm_calls_available = max_llm_calls
         round_index = 0
         trace_writer = FlatTraceWriter(
             trace_dir=trace_dir,
@@ -1045,7 +1036,6 @@ class MultiTurnReactAgent(BaseAgent):
             workspace_root=str(resolved_workspace_root),
             prompt=prompt_text,
             trace_path=str(self.trace_path) if self.trace_path else "",
-            llm_calls_remaining=num_llm_calls_available,
             max_rounds=self.max_rounds,
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
@@ -1055,7 +1045,6 @@ class MultiTurnReactAgent(BaseAgent):
         def persist_state(*, termination: str = "", error: str = "") -> None:
             session_state.trace_path = str(self.trace_path) if self.trace_path else ""
             session_state.turn_index = round_index
-            session_state.llm_calls_remaining = num_llm_calls_available
             session_state.current_token_estimate = self.count_tokens(messages)
             session_state.termination = termination
             session_state.error = error
@@ -1103,7 +1092,7 @@ class MultiTurnReactAgent(BaseAgent):
         trace_writer.append(role="user", text=message_trace_text(user_content), turn_index=0)
         persist_state()
 
-        while num_llm_calls_available > 0 and round_index < self.max_rounds:
+        while round_index < self.max_rounds:
             if interruption_requested():
                 return finalize_interrupted()
             if remaining_runtime_seconds(runtime_deadline) is not None and remaining_runtime_seconds(runtime_deadline) <= 0:
@@ -1196,7 +1185,6 @@ class MultiTurnReactAgent(BaseAgent):
             if interruption_requested():
                 return finalize_interrupted()
             round_index += 1
-            num_llm_calls_available -= 1
             llm_request_messages, image_aging = prepare_messages_for_llm(messages)
             try:
                 llm_reply = self.call_llm_api(llm_request_messages, runtime_deadline=runtime_deadline)
@@ -1460,8 +1448,6 @@ class MultiTurnReactAgent(BaseAgent):
         termination = 'result not found'
         if round_index >= self.max_rounds:
             termination = 'exceed available rounds'
-        elif num_llm_calls_available == 0:
-            termination = 'exceed available llm calls'
         return finalize(result_text, termination, error=termination)
 
     def custom_call_tool(self, tool_name: str, tool_args: Any, **kwargs):

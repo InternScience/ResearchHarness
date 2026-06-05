@@ -107,19 +107,18 @@ Optional variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WORKSPACE_ROOT` | `./workspace` | Default workspace root when no explicit workspace is passed. |
-| `MAX_LLM_CALL_PER_RUN` | `100` | Maximum LLM calls in one agent run. |
-| `MAX_AGENT_ROUNDS` | `100` | Maximum ReAct loop rounds. |
-| `MAX_AGENT_RUNTIME_SECONDS` | `9000` | Maximum wall-clock runtime for one agent run. |
-| `LLM_TIMEOUT_SECONDS` | `600` | Timeout for each LLM API request. |
+| `MAX_ROUNDS` | `100` | Maximum ReAct loop rounds. |
+| `MAX_RUNTIME_SECONDS` | `9000` | Maximum wall-clock runtime for one agent run. |
+| `TIMEOUT_SECONDS` | `600` | Timeout for each LLM API request. |
 | `WEBFETCH_TIMEOUT_SECONDS` | `180` | Overall timeout for one WebFetch tool call. |
 | `WEBFETCH_MAX_CHARS` | `30000` | Hard maximum characters returned by one WebFetch call. |
-| `LLM_MAX_OUTPUT_TOKENS` | `10000` | Requested maximum output tokens. |
+| `MAX_OUTPUT_TOKENS` | `10000` | Requested maximum output tokens. |
 | `MAX_INPUT_TOKENS` | `320000` | Input-token budget used by runtime accounting. |
-| `LLM_MAX_RETRIES` | `10` | Maximum retries for transient LLM API errors. |
+| `MAX_RETRIES` | `10` | Maximum retries for transient LLM API errors. |
 | `TEMPERATURE` | `0.6` | Main model temperature. |
 | `TOP_P` | `0.95` | Main model top-p. |
 | `PRESENCE_PENALTY` | `1.1` | Main model presence penalty when supported. |
-| `AUTO_COMPACT_TRIGGER_TOKENS` | `128k` | Context length threshold for automatic compaction. |
+| `COMPACT_TRIGGER_TOKENS` | `128k` | Context length threshold for automatic compaction. |
 | `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | Token estimate for each image content part. |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | Maximum image edge sent to multimodal models. |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | Maximum compressed image payload size. |
@@ -139,9 +138,12 @@ In Python import mode, `create_agent(...)` and `run_agent(...)` can override
 model/runtime settings for one agent instance, including `api_key`, `api_base`,
 `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
 `max_retries`, `temperature`, `top_p`, `presence_penalty`,
-`compact_trigger_tokens`, `max_llm_calls`, `max_rounds`, and
-`max_runtime_seconds`. In CLI mode, model and sampling options stay compact and
-come from process environment variables or `.env`.
+`compact_trigger_tokens`, `max_rounds`, and
+`max_runtime_seconds`. Environment variables for these runtime settings use the
+upper-case form of the Python argument name, such as `MAX_ROUNDS`,
+`TIMEOUT_SECONDS`, `MAX_OUTPUT_TOKENS`, and `COMPACT_TRIGGER_TOKENS`. In CLI
+mode, model and sampling options stay compact and come from process environment
+variables or `.env`.
 
 Before real use, run:
 
@@ -549,7 +551,6 @@ Supported request fields:
 | `stream` | no | Must be absent or `false`; streaming is not supported. |
 | `n` | no | Must be absent or `1`. |
 | `max_tokens` | no | Maximum output tokens for the output wrapper. |
-| `max_completion_tokens` | no | Alias accepted for output-wrapper max tokens. |
 | `response_format` | no | Passed to the wrappers as an output-format hint. |
 | `workspace-root` | no | Absolute path to an existing workspace directory for this request. If missing or invalid, the default per-request `agent_workspace/` is used. |
 

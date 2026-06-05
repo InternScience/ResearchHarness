@@ -43,6 +43,7 @@ def main() -> int:
         build_passthrough_input_plan,
         create_app,
         extract_json_object,
+        final_max_tokens,
         make_chat_completion_response,
         prepare_openai_input,
         run_chat_completion,
@@ -270,6 +271,12 @@ def main() -> int:
     except openai_server.OpenAICompatError as exc:
         workspace_alias_rejected = exc.status_code == 400 and "workspace-root" in exc.message
 
+    max_completion_tokens_rejected = False
+    try:
+        final_max_tokens({"max_completion_tokens": 16})
+    except openai_server.OpenAICompatError as exc:
+        max_completion_tokens_rejected = exc.status_code == 400 and "max_tokens" in exc.message
+
     default_model_label, default_backend_model = openai_server.resolve_api_model_selection("")
     default_server_config = ServerConfig(api_runs_dir=api_runs_root / "defaults")
     high_concurrency_config = ServerConfig(api_runs_dir=api_runs_root / "concurrency", max_concurrent_runs=4)
@@ -387,6 +394,8 @@ def main() -> int:
         and any(names == ["Read", "Write", "Edit", "Bash"] for names in fake_seen.get("function_lists", []))
         and invalid_model_rejected
         and workspace_alias_rejected
+        and max_completion_tokens_rejected
+        and final_max_tokens({"max_tokens": 16}) == 16
         and default_model_label == "RH"
         and bool(default_backend_model)
         and default_server_config.input_wrapper is False
@@ -472,6 +481,7 @@ def main() -> int:
                     ],
                     "invalid_model_rejected": invalid_model_rejected,
                     "workspace_alias_rejected": workspace_alias_rejected,
+                    "max_completion_tokens_rejected": max_completion_tokens_rejected,
                     "default_model_selection": [default_model_label, default_backend_model],
                     "default_wrapper_config": [
                         default_server_config.input_wrapper,

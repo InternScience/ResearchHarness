@@ -215,8 +215,8 @@ def check_agent_runtime_limit_on_tool_execution() -> tuple[bool, str]:
                 "tool_calls": [],
             }
 
-    previous_runtime = os.environ.get("MAX_AGENT_RUNTIME_SECONDS")
-    os.environ["MAX_AGENT_RUNTIME_SECONDS"] = "1"
+    previous_runtime = os.environ.get("MAX_RUNTIME_SECONDS")
+    os.environ["MAX_RUNTIME_SECONDS"] = "1"
     try:
         agent = FakeAgent()
         started_at = time.time()
@@ -224,9 +224,9 @@ def check_agent_runtime_limit_on_tool_execution() -> tuple[bool, str]:
         elapsed = time.time() - started_at
     finally:
         if previous_runtime is None:
-            os.environ.pop("MAX_AGENT_RUNTIME_SECONDS", None)
+            os.environ.pop("MAX_RUNTIME_SECONDS", None)
         else:
-            os.environ["MAX_AGENT_RUNTIME_SECONDS"] = previous_runtime
+            os.environ["MAX_RUNTIME_SECONDS"] = previous_runtime
 
     detail = json.dumps(
         {

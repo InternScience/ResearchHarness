@@ -35,7 +35,6 @@ class AgentSessionState:
     prompt: str
     trace_path: str = ""
     turn_index: int = 0
-    llm_calls_remaining: int = 0
     max_rounds: int = 0
     max_input_tokens: int = 0
     max_output_tokens: int = 0
@@ -60,7 +59,6 @@ class AgentSessionState:
             "prompt": self.prompt,
             "trace_path": self.trace_path,
             "turn_index": self.turn_index,
-            "llm_calls_remaining": self.llm_calls_remaining,
             "max_rounds": self.max_rounds,
             "max_input_tokens": self.max_input_tokens,
             "max_output_tokens": self.max_output_tokens,

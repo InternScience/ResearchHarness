@@ -56,7 +56,6 @@ def main() -> int:
         top_p=0.7,
         presence_penalty=0.3,
         compact_trigger_tokens="24k",
-        max_llm_calls=11,
         max_rounds=12,
         max_runtime_seconds=123,
         workspace_root=str(case_dir / "agent_workspace"),
@@ -158,7 +157,6 @@ def main() -> int:
             "api_base": explicit_agent._llm_api_base,
             "timeout_seconds": explicit_agent._llm_timeout_seconds,
             "generate_cfg": explicit_agent.llm_generate_cfg,
-            "max_llm_calls": explicit_agent.max_llm_calls,
             "max_rounds": explicit_agent.max_rounds,
             "max_runtime_seconds": explicit_agent.max_runtime_seconds,
         },
@@ -191,7 +189,6 @@ def main() -> int:
         and details["llm"]["generate_cfg"]["top_p"] == 0.7
         and details["llm"]["generate_cfg"]["presence_penalty"] == 0.3
         and details["llm"]["generate_cfg"]["compact_trigger_tokens"] == "24k"
-        and details["llm"]["max_llm_calls"] == 11
         and details["llm"]["max_rounds"] == 12
         and details["llm"]["max_runtime_seconds"] == 123
         and Bash().name not in explicit_agent.tool_names

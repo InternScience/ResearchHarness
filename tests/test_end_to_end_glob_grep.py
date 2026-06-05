@@ -79,10 +79,10 @@ def main() -> int:
     env["TEMPERATURE"] = "0"
     env["TOP_P"] = "1.0"
     env["PRESENCE_PENALTY"] = "0.0"
-    env["MAX_LLM_CALL_PER_RUN"] = "8"
-    env["MAX_AGENT_RUNTIME_SECONDS"] = "180"
-    env["LLM_MAX_RETRIES"] = "2"
-    env["LLM_TIMEOUT_SECONDS"] = "120"
+    env["MAX_ROUNDS"] = "8"
+    env["MAX_RUNTIME_SECONDS"] = "180"
+    env["MAX_RETRIES"] = "2"
+    env["TIMEOUT_SECONDS"] = "120"
     env["WORKSPACE_ROOT"] = str(ROOT)
 
     try:

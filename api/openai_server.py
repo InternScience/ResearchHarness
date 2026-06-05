@@ -392,7 +392,9 @@ def call_wrapper_text(
 
 
 def final_max_tokens(payload: dict[str, Any]) -> Optional[int]:
-    raw_value = payload.get("max_tokens", payload.get("max_completion_tokens"))
+    if "max_completion_tokens" in payload:
+        raise OpenAICompatError(400, "Use max_tokens; max_completion_tokens is not accepted by this endpoint.")
+    raw_value = payload.get("max_tokens")
     if raw_value is None:
         return None
     try:

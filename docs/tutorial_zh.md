@@ -104,19 +104,18 @@ pip install -e . --no-deps
 | 变量 | 默认值 | 含义 |
 | --- | --- | --- |
 | `WORKSPACE_ROOT` | `./workspace` | 未显式传入 workspace 时使用的默认 workspace root。 |
-| `MAX_LLM_CALL_PER_RUN` | `100` | 单次 agent run 最多允许的 LLM 调用次数。 |
-| `MAX_AGENT_ROUNDS` | `100` | ReAct loop 最大轮次。 |
-| `MAX_AGENT_RUNTIME_SECONDS` | `9000` | 单次 agent run 的最大运行秒数。 |
-| `LLM_TIMEOUT_SECONDS` | `600` | 单次 LLM API 请求超时时间。 |
+| `MAX_ROUNDS` | `100` | ReAct loop 最大轮次。 |
+| `MAX_RUNTIME_SECONDS` | `9000` | 单次 agent run 的最大运行秒数。 |
+| `TIMEOUT_SECONDS` | `600` | 单次 LLM API 请求超时时间。 |
 | `WEBFETCH_TIMEOUT_SECONDS` | `180` | 单次 WebFetch 工具调用的总超时时间。 |
 | `WEBFETCH_MAX_CHARS` | `30000` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
-| `LLM_MAX_OUTPUT_TOKENS` | `10000` | 请求模型输出的最大 token 数。 |
+| `MAX_OUTPUT_TOKENS` | `10000` | 请求模型输出的最大 token 数。 |
 | `MAX_INPUT_TOKENS` | `320000` | runtime token accounting 使用的输入 token 预算。 |
-| `LLM_MAX_RETRIES` | `10` | 瞬时 LLM API 错误最大重试次数。 |
+| `MAX_RETRIES` | `10` | 瞬时 LLM API 错误最大重试次数。 |
 | `TEMPERATURE` | `0.6` | 主模型 temperature。 |
 | `TOP_P` | `0.95` | 主模型 top-p。 |
 | `PRESENCE_PENALTY` | `1.1` | provider 支持时使用的 presence penalty。 |
-| `AUTO_COMPACT_TRIGGER_TOKENS` | `128k` | 自动上下文压缩触发阈值。 |
+| `COMPACT_TRIGGER_TOKENS` | `128k` | 自动上下文压缩触发阈值。 |
 | `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | 每个 image content part 的 token 估计。 |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | 发送给多模态模型的图片最大边长。 |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | 发送给多模态模型的压缩图片最大字节数。 |
@@ -136,7 +135,9 @@ pip install -e . --no-deps
 agent 实例覆盖模型和运行时设置，包括 `api_key`、`api_base`、`model_name`、
 `timeout_seconds`、`max_input_tokens`、`max_output_tokens`、`max_retries`、
 `temperature`、`top_p`、`presence_penalty`、`compact_trigger_tokens`、
-`max_llm_calls`、`max_rounds` 和 `max_runtime_seconds`。CLI 模式保持命令行
+`max_rounds` 和 `max_runtime_seconds`。这些运行时设置的环境变量使用
+Python 参数名的大写形式，例如 `MAX_ROUNDS`、`TIMEOUT_SECONDS`、
+`MAX_OUTPUT_TOKENS` 和 `COMPACT_TRIGGER_TOKENS`。CLI 模式保持命令行
 简洁，模型和采样设置主要来自进程环境变量或 `.env`。
 
 正式使用前，先运行：
@@ -516,7 +517,6 @@ agent loop 和 compaction，并且只对这个请求生效。
 | `stream` | 否 | 必须不存在或为 `false`；当前不支持 streaming。 |
 | `n` | 否 | 必须不存在或为 `1`。 |
 | `max_tokens` | 否 | output wrapper 最大输出 token。 |
-| `max_completion_tokens` | 否 | output wrapper 最大输出 token 的兼容别名。 |
 | `response_format` | 否 | 作为输出格式提示传给 wrapper。 |
 | `workspace-root` | 否 | 本次请求使用的 workspace 绝对路径。只有指向已存在目录时才使用；缺失或无效时回退到默认 per-request `agent_workspace/`。 |
 
