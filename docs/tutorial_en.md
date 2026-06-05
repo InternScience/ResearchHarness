@@ -107,18 +107,18 @@ Optional variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WORKSPACE_ROOT` | `./workspace` | Default workspace root when no explicit workspace is passed. |
-| `MAX_ROUNDS` | `100` | Maximum ReAct loop rounds. |
-| `MAX_RUNTIME_SECONDS` | `9000` | Maximum wall-clock runtime for one agent run. |
-| `TIMEOUT_SECONDS` | `600` | Timeout for each LLM API request. |
-| `WEBFETCH_TIMEOUT_SECONDS` | `180` | Overall timeout for one WebFetch tool call. |
-| `WEBFETCH_MAX_CHARS` | `30000` | Hard maximum characters returned by one WebFetch call. |
-| `MAX_OUTPUT_TOKENS` | `10000` | Requested maximum output tokens. |
-| `MAX_INPUT_TOKENS` | `320000` | Input-token budget used by runtime accounting. |
+| `MAX_ROUNDS` | `500` | Maximum ReAct loop rounds. |
+| `MAX_RUNTIME_SECONDS` | `10800` | Maximum wall-clock runtime for one agent run. |
+| `TIMEOUT_SECONDS` | `1200` | Timeout for each LLM API request. |
+| `WEBFETCH_TIMEOUT_SECONDS` | `300` | Overall timeout for one WebFetch tool call. |
+| `WEBFETCH_MAX_CHARS` | `40960` | Hard maximum characters returned by one WebFetch call. |
+| `MAX_OUTPUT_TOKENS` | `40960` | Requested maximum output tokens. |
+| `MAX_INPUT_TOKENS` | `128000` | Input-token budget used by runtime accounting. |
 | `MAX_RETRIES` | `10` | Maximum retries for transient LLM API errors. |
 | `TEMPERATURE` | `0.6` | Main model temperature. |
 | `TOP_P` | `0.95` | Main model top-p. |
-| `PRESENCE_PENALTY` | `1.1` | Main model presence penalty when supported. |
-| `COMPACT_TRIGGER_TOKENS` | `128k` | Context length threshold for automatic compaction. |
+| `PRESENCE_PENALTY` | `1.00` | Main model presence penalty when supported. |
+| `COMPACT_TRIGGER_TOKENS` | `96k` | Context length threshold for automatic compaction. |
 | `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | Token estimate for each image content part. |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | Maximum image edge sent to multimodal models. |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | Maximum compressed image payload size. |
@@ -550,7 +550,8 @@ Supported request fields:
 | `messages` | yes | OpenAI-style chat messages. |
 | `stream` | no | Must be absent or `false`; streaming is not supported. |
 | `n` | no | Must be absent or `1`. |
-| `max_tokens` | no | Maximum output tokens for the output wrapper. |
+| `max_completion_tokens` | no | Maximum output tokens for the output wrapper. |
+| `max_tokens` | no | Compatibility alias for `max_completion_tokens`; accepted with an API trace warning. |
 | `response_format` | no | Passed to the wrappers as an output-format hint. |
 | `workspace-root` | no | Absolute path to an existing workspace directory for this request. If missing or invalid, the default per-request `agent_workspace/` is used. |
 

@@ -391,19 +391,32 @@ def call_wrapper_text(
     return text
 
 
-def final_max_tokens(payload: dict[str, Any]) -> Optional[int]:
-    if "max_completion_tokens" in payload:
-        raise OpenAICompatError(400, "Use max_tokens; max_completion_tokens is not accepted by this endpoint.")
-    raw_value = payload.get("max_tokens")
+def final_max_completion_tokens(payload: dict[str, Any]) -> Optional[int]:
+    raw_value = payload.get("max_completion_tokens", payload.get("max_tokens"))
     if raw_value is None:
         return None
     try:
         value = int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise OpenAICompatError(400, "max_tokens must be an integer.") from exc
+        raise OpenAICompatError(400, "max_completion_tokens/max_tokens must be an integer.") from exc
     if value <= 0:
-        raise OpenAICompatError(400, "max_tokens must be positive.")
+        raise OpenAICompatError(400, "max_completion_tokens/max_tokens must be positive.")
     return value
+
+
+def request_parameter_warnings(payload: dict[str, Any]) -> list[dict[str, str]]:
+    warnings: list[dict[str, str]] = []
+    if "max_tokens" in payload:
+        warnings.append(
+            {
+                "field": "max_tokens",
+                "message": (
+                    "max_tokens is accepted for broad chat-completions compatibility; "
+                    "prefer max_completion_tokens for new requests."
+                ),
+            }
+        )
+    return warnings
 
 
 def resolve_request_workspace_root(payload: dict[str, Any], default_workspace_root: Path) -> tuple[Path, dict[str, Any]]:
@@ -472,6 +485,8 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
         "workspace_selection",
         workspace_meta,
     )
+    for warning in request_parameter_warnings(payload):
+        append_api_event(trace_dir, "parameter_warning", warning)
     prepared = prepare_openai_input(
         payload["messages"],
         agent_workspace,
@@ -556,7 +571,11 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
             input_plan=input_plan,
             agent_result_text=agent_result_text,
         )
-        final_text = call_wrapper_text(agent, output_wrapper_messages, max_output_tokens=final_max_tokens(payload))
+        final_text = call_wrapper_text(
+            agent,
+            output_wrapper_messages,
+            max_output_tokens=final_max_completion_tokens(payload),
+        )
         append_api_event(
             trace_dir,
             "output_wrapper",

@@ -69,16 +69,16 @@ OPTIONAL_TOOLS = [
 OPTIONAL_TOOL_MAP = {tool.name: tool for tool in OPTIONAL_TOOLS}
 ALL_TOOL_MAP = {**AVAILABLE_TOOL_MAP, **OPTIONAL_TOOL_MAP}
 DEFAULT_IMAGE_TOKEN_ESTIMATE = 1536
-DEFAULT_MODEL_NAME = "gpt-5.4"
-DEFAULT_MAX_ROUNDS = 100
-DEFAULT_MAX_RUNTIME_SECONDS = 150 * 60
-DEFAULT_MAX_OUTPUT_TOKENS = 10000
-DEFAULT_MAX_INPUT_TOKENS = 320000
+DEFAULT_MODEL_NAME = "gpt-5.5"
+DEFAULT_MAX_ROUNDS = 500
+DEFAULT_MAX_RUNTIME_SECONDS = 10800
+DEFAULT_MAX_OUTPUT_TOKENS = 40960
+DEFAULT_MAX_INPUT_TOKENS = 128000
 DEFAULT_MAX_RETRIES = 10
 DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
-DEFAULT_PRESENCE_PENALTY = 1.1
-DEFAULT_TIMEOUT_SECONDS = 600.0
+DEFAULT_PRESENCE_PENALTY = 1.00
+DEFAULT_TIMEOUT_SECONDS = 1200.0
 MAX_PARALLEL_READ_TOOL_CALLS = 3
 PARALLEL_READ_TOOL_NAMES = frozenset(
     {
@@ -1012,7 +1012,7 @@ class MultiTurnReactAgent(BaseAgent):
         max_output_tokens = int(self.llm_generate_cfg.get("max_output_tokens", max_output_tokens_default()))
         compact_trigger_tokens = self.llm_generate_cfg.get("compact_trigger_tokens")
         if compact_trigger_tokens is None:
-            compact_trigger_tokens = os.getenv("COMPACT_TRIGGER_TOKENS", "128k")
+            compact_trigger_tokens = os.getenv("COMPACT_TRIGGER_TOKENS", "96k")
         model_profile = resolve_model_profile(
             self.model,
             configured_max_input_tokens=max_input_tokens,

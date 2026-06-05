@@ -86,6 +86,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-06-06) Runtime configuration names are now consolidated, the duplicate LLM-call loop limit has been removed, and the default long-run profile now uses `MAX_ROUNDS=500`, `MAX_RUNTIME_SECONDS=10800`, `TIMEOUT_SECONDS=1200`, `MAX_INPUT_TOKENS=128000`, and `COMPACT_TRIGGER_TOKENS=96k`.
+
 🚩 **Update** (2026-05-22) Added a real API smoke test that runs the five SGI benchmark README server commands and OpenAI SDK examples, then validates each expected final-answer format.
 
 🚩 **Update** (2026-05-22) CLI and API deployments can now expose an explicit complete tool set with repeatable `--tool NAME`, useful when a run needs a smaller or benchmark-specific tool surface.
@@ -95,6 +97,9 @@ If you are new to the project, the recommended reading order is:
 🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
 
 🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
+
+<details>
+<summary>👉 More News (Click to expand)</summary>
 
 🚩 **Update** (2026-05-19) `WebFetch` now exposes a single-string `url` schema for broader provider compatibility, including Gemini tool declarations. Fetch multiple pages with multiple `WebFetch` calls.
 
@@ -110,9 +115,6 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-05-14) API requests can pass `extra_body={"workspace-root": "/abs/path/to/existing/workspace"}` to run inside a prepared workspace while still writing per-request traces under `--api-runs-dir`.
 
-<details>
-<summary>👉 More News (Click to expand)</summary>
-
 🚩 **Update** (2026-05-13) The local browser frontend and hosted Space now render common LaTeX math delimiters in final assistant Markdown answers, including `$$...$$`, `\(...\)`, and `\[...\]`, while leaving tool outputs and runtime logs unchanged.
 
 🚩 **Update** (2026-05-13) ResearchHarness now includes a one-command local chat UI for interactive agent runs. It streams assistant/tool steps in real time, runs directly inside a selected local workspace, supports image attachments, handles `AskUser` replies through the same chat input box, and lets users continue after a final answer without losing prior context.
@@ -125,7 +127,7 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-04-25) ResearchHarness now supports built-in context compaction for long multi-step tasks instead of relying only on a growing raw message list.
 
-🚩 **Update** (2026-04-25) The default compaction trigger is `128k`, and you can override it with `COMPACT_TRIGGER_TOKENS=16k` or `create_agent(compact_trigger_tokens="32k")`.
+🚩 **Update** (2026-04-25) The default compaction trigger is `96k`, and you can override it with `COMPACT_TRIGGER_TOKENS=16k` or `create_agent(compact_trigger_tokens="32k")`.
 
 🚩 **Update** (2026-04-25) The existing `trace_*.jsonl` format now records full `llm_call` and `compaction` payloads in the same file, so reasoning context, tool environment, and memory-compression steps can all be reused for training or distillation.
 
@@ -369,7 +371,7 @@ Minimal example:
 ```env
 API_KEY="your_api_key"
 API_BASE="https://your-openai-compatible-endpoint/v1"
-MODEL_NAME="gpt-5.4"
+MODEL_NAME="gpt-5.5"
 SERPER_KEY="your_serper_key"
 JINA_KEY="your_jina_key"
 MINERU_TOKEN="your_mineru_token"
@@ -1034,7 +1036,7 @@ same file usable for debugging, replay, benchmark inspection, and optional
 step-level training or distillation.
 
 Long runs can trigger automatic context compaction before the input budget is
-exhausted. By default, the trigger budget is `128k`. You can override it when
+exhausted. By default, the trigger budget is `96k`. You can override it when
 you want earlier or later compaction:
 
 ```bash

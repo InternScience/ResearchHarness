@@ -451,7 +451,7 @@ Arguments:
 - `url`: string, page URL
 - `start_line`: optional integer, 1-based start line, defaults to `1`
 - `end_line`: optional integer, 1-based end line
-- `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `30000`
+- `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `40960`
 
 Behavior:
 

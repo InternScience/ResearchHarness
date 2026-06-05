@@ -10,8 +10,8 @@ import requests
 from agent_base.tools.tooling import ToolBase
 from agent_base.utils import PROJECT_ROOT, env_flag, load_dotenv
 
-DEFAULT_WEBFETCH_TIMEOUT_SECONDS = 180.0
-DEFAULT_WEBFETCH_MAX_CHARS = 30000
+DEFAULT_WEBFETCH_TIMEOUT_SECONDS = 300.0
+DEFAULT_WEBFETCH_MAX_CHARS = 40960
 
 
 def webfetch_timeout_seconds() -> float:
@@ -274,7 +274,7 @@ class WebFetch(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 30000 and the value must not exceed WEBFETCH_MAX_CHARS.",
+                "description": "Maximum number of characters to return. Default is 40960 and the value must not exceed WEBFETCH_MAX_CHARS.",
             },
         },
         "required": ["url"],

@@ -43,9 +43,10 @@ def main() -> int:
         build_passthrough_input_plan,
         create_app,
         extract_json_object,
-        final_max_tokens,
+        final_max_completion_tokens,
         make_chat_completion_response,
         prepare_openai_input,
+        request_parameter_warnings,
         run_chat_completion,
     )
 
@@ -66,6 +67,7 @@ def main() -> int:
             },
         ],
         "response_format": {"type": "json_object"},
+        "max_tokens": 16,
     }
 
     prepared = prepare_openai_input(payload["messages"], TMP_DIR)
@@ -271,11 +273,8 @@ def main() -> int:
     except openai_server.OpenAICompatError as exc:
         workspace_alias_rejected = exc.status_code == 400 and "workspace-root" in exc.message
 
-    max_completion_tokens_rejected = False
-    try:
-        final_max_tokens({"max_completion_tokens": 16})
-    except openai_server.OpenAICompatError as exc:
-        max_completion_tokens_rejected = exc.status_code == 400 and "max_tokens" in exc.message
+    max_tokens_compat_ok = final_max_completion_tokens({"max_tokens": 16}) == 16
+    max_tokens_warning_ok = bool(request_parameter_warnings({"max_tokens": 16}))
 
     default_model_label, default_backend_model = openai_server.resolve_api_model_selection("")
     default_server_config = ServerConfig(api_runs_dir=api_runs_root / "defaults")
@@ -342,6 +341,7 @@ def main() -> int:
     custom_api_events = load_trace_records(custom_agent_trace_dir / "api_trace.jsonl") if custom_agent_trace_dir else []
     missing_api_events = load_trace_records(missing_agent_trace_dir / "api_trace.jsonl") if missing_agent_trace_dir else []
     default_workspace_event = next((row for row in default_api_events if row.get("event") == "workspace_selection"), {})
+    default_parameter_warning = next((row for row in default_api_events if row.get("event") == "parameter_warning"), {})
     custom_workspace_event = next((row for row in custom_api_events if row.get("event") == "workspace_selection"), {})
     missing_workspace_event = next((row for row in missing_api_events if row.get("event") == "workspace_selection"), {})
 
@@ -394,8 +394,9 @@ def main() -> int:
         and any(names == ["Read", "Write", "Edit", "Bash"] for names in fake_seen.get("function_lists", []))
         and invalid_model_rejected
         and workspace_alias_rejected
-        and max_completion_tokens_rejected
-        and final_max_tokens({"max_tokens": 16}) == 16
+        and max_tokens_compat_ok
+        and max_tokens_warning_ok
+        and final_max_completion_tokens({"max_completion_tokens": 16}) == 16
         and default_model_label == "RH"
         and bool(default_backend_model)
         and default_server_config.input_wrapper is False
@@ -440,6 +441,7 @@ def main() -> int:
         and (custom_agent_trace_dir / "api_trace.jsonl").exists()
         and (missing_agent_trace_dir / "api_trace.jsonl").exists()
         and default_workspace_event.get("payload", {}).get("source") == "default"
+        and default_parameter_warning.get("payload", {}).get("field") == "max_tokens"
         and custom_workspace_event.get("payload", {}).get("source") == "request"
         and custom_workspace_event.get("payload", {}).get("workspace_root") == str(custom_workspace)
         and missing_workspace_event.get("payload", {}).get("source") == "default"
@@ -479,9 +481,11 @@ def main() -> int:
                         custom_workspace_event,
                         missing_workspace_event,
                     ],
+                    "default_parameter_warning": default_parameter_warning,
                     "invalid_model_rejected": invalid_model_rejected,
                     "workspace_alias_rejected": workspace_alias_rejected,
-                    "max_completion_tokens_rejected": max_completion_tokens_rejected,
+                    "max_tokens_compat_ok": max_tokens_compat_ok,
+                    "max_tokens_warning_ok": max_tokens_warning_ok,
                     "default_model_selection": [default_model_label, default_backend_model],
                     "default_wrapper_config": [
                         default_server_config.input_wrapper,

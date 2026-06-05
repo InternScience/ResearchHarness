@@ -104,18 +104,18 @@ pip install -e . --no-deps
 | 变量 | 默认值 | 含义 |
 | --- | --- | --- |
 | `WORKSPACE_ROOT` | `./workspace` | 未显式传入 workspace 时使用的默认 workspace root。 |
-| `MAX_ROUNDS` | `100` | ReAct loop 最大轮次。 |
-| `MAX_RUNTIME_SECONDS` | `9000` | 单次 agent run 的最大运行秒数。 |
-| `TIMEOUT_SECONDS` | `600` | 单次 LLM API 请求超时时间。 |
-| `WEBFETCH_TIMEOUT_SECONDS` | `180` | 单次 WebFetch 工具调用的总超时时间。 |
-| `WEBFETCH_MAX_CHARS` | `30000` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
-| `MAX_OUTPUT_TOKENS` | `10000` | 请求模型输出的最大 token 数。 |
-| `MAX_INPUT_TOKENS` | `320000` | runtime token accounting 使用的输入 token 预算。 |
+| `MAX_ROUNDS` | `500` | ReAct loop 最大轮次。 |
+| `MAX_RUNTIME_SECONDS` | `10800` | 单次 agent run 的最大运行秒数。 |
+| `TIMEOUT_SECONDS` | `1200` | 单次 LLM API 请求超时时间。 |
+| `WEBFETCH_TIMEOUT_SECONDS` | `300` | 单次 WebFetch 工具调用的总超时时间。 |
+| `WEBFETCH_MAX_CHARS` | `40960` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
+| `MAX_OUTPUT_TOKENS` | `40960` | 请求模型输出的最大 token 数。 |
+| `MAX_INPUT_TOKENS` | `128000` | runtime token accounting 使用的输入 token 预算。 |
 | `MAX_RETRIES` | `10` | 瞬时 LLM API 错误最大重试次数。 |
 | `TEMPERATURE` | `0.6` | 主模型 temperature。 |
 | `TOP_P` | `0.95` | 主模型 top-p。 |
-| `PRESENCE_PENALTY` | `1.1` | provider 支持时使用的 presence penalty。 |
-| `COMPACT_TRIGGER_TOKENS` | `128k` | 自动上下文压缩触发阈值。 |
+| `PRESENCE_PENALTY` | `1.00` | provider 支持时使用的 presence penalty。 |
+| `COMPACT_TRIGGER_TOKENS` | `96k` | 自动上下文压缩触发阈值。 |
 | `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | 每个 image content part 的 token 估计。 |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | 发送给多模态模型的图片最大边长。 |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | 发送给多模态模型的压缩图片最大字节数。 |
@@ -516,7 +516,8 @@ agent loop 和 compaction，并且只对这个请求生效。
 | `messages` | 是 | OpenAI-style chat messages。 |
 | `stream` | 否 | 必须不存在或为 `false`；当前不支持 streaming。 |
 | `n` | 否 | 必须不存在或为 `1`。 |
-| `max_tokens` | 否 | output wrapper 最大输出 token。 |
+| `max_completion_tokens` | 否 | output wrapper 最大输出 token。 |
+| `max_tokens` | 否 | `max_completion_tokens` 的兼容别名；接受但会写入 API trace warning。 |
 | `response_format` | 否 | 作为输出格式提示传给 wrapper。 |
 | `workspace-root` | 否 | 本次请求使用的 workspace 绝对路径。只有指向已存在目录时才使用；缺失或无效时回退到默认 per-request `agent_workspace/`。 |
 
