@@ -902,34 +902,36 @@ class MultiTurnReactAgent(BaseAgent):
     def count_tokens(self, messages, *, include_tool_schema: bool = True):
         image_token_estimate = int(os.getenv("IMAGE_PART_TOKEN_ESTIMATE", str(DEFAULT_IMAGE_TOKEN_ESTIMATE)))
         token_count = self._native_tools_token_estimate if include_tool_schema else 0
+
+        def count_text_tokens(text: Any) -> int:
+            return len(self._encoding.encode(str(text), disallowed_special=()))
+
         for message in messages:
-            token_count += len(self._encoding.encode(message.get("role", "")))
+            token_count += count_text_tokens(message.get("role", ""))
             content = message.get("content", "")
             if isinstance(content, str):
-                token_count += len(self._encoding.encode(content))
+                token_count += count_text_tokens(content)
             elif isinstance(content, list):
                 for part in content:
                     if not isinstance(part, dict):
-                        token_count += len(self._encoding.encode(str(part)))
+                        token_count += count_text_tokens(part)
                         continue
                     if part.get("type") == "text":
-                        token_count += len(self._encoding.encode(str(part.get("text", ""))))
+                        token_count += count_text_tokens(part.get("text", ""))
                     elif part.get("type") == "image_url":
                         token_count += image_token_estimate
                     else:
-                        token_count += len(self._encoding.encode(str(part)))
+                        token_count += count_text_tokens(part)
             else:
-                token_count += len(self._encoding.encode(str(content)))
+                token_count += count_text_tokens(content)
             tool_calls = message.get("tool_calls")
             if isinstance(tool_calls, list) and tool_calls:
-                token_count += len(self._encoding.encode(json.dumps(tool_calls, ensure_ascii=False)))
+                token_count += count_text_tokens(json.dumps(tool_calls, ensure_ascii=False))
             reasoning_content = message.get("reasoning_content")
             if isinstance(reasoning_content, str) and reasoning_content:
-                token_count += len(self._encoding.encode(reasoning_content))
+                token_count += count_text_tokens(reasoning_content)
             elif reasoning_content is not None:
-                token_count += len(
-                    self._encoding.encode(json.dumps(safe_jsonable(reasoning_content), ensure_ascii=False))
-                )
+                token_count += count_text_tokens(json.dumps(safe_jsonable(reasoning_content), ensure_ascii=False))
         return token_count
 
     def run(
