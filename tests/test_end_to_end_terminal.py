@@ -20,6 +20,7 @@ from test_support import (
     load_trace_records,
     preview,
     require_test_env,
+    reset_trace_dir,
     single_trace_path,
     subprocess_python,
     training_trace_ok,
@@ -69,9 +70,7 @@ def main() -> int:
     require_test_env()
     prompt = QUESTION_FILE.read_text(encoding="utf-8").strip()
     RUN_WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
-    TRACE_DIR.mkdir(parents=True, exist_ok=True)
-    for existing_trace in TRACE_DIR.glob("*.jsonl"):
-        existing_trace.unlink()
+    reset_trace_dir(TRACE_DIR)
 
     env = os.environ.copy()
     env["DEBUG_AGENT"] = "1"

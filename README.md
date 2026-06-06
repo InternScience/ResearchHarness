@@ -86,6 +86,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-06-06) Provider-specific OpenAI-compatible request options can now be passed consistently across Python import mode, CLI, and API server mode through a validated `extra_body` object.
+
 🚩 **Update** (2026-06-06) Runtime configuration names are now consolidated, the duplicate LLM-call loop limit has been removed, and the default long-run profile now uses `MAX_ROUNDS=500`, `MAX_RUNTIME_SECONDS=10800`, `TIMEOUT_SECONDS=1200`, `MAX_INPUT_TOKENS=128000`, and `COMPACT_TRIGGER_TOKENS=96k`.
 
 🚩 **Update** (2026-05-22) Added a real API smoke test that runs the five SGI benchmark README server commands and OpenAI SDK examples, then validates each expected final-answer format.
@@ -96,10 +98,10 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
 
-🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
-
 <details>
 <summary>👉 More News (Click to expand)</summary>
+
+🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
 
 🚩 **Update** (2026-05-19) `WebFetch` now exposes a single-string `url` schema for broader provider compatibility, including Gemini tool declarations. Fetch multiple pages with multiple `WebFetch` calls.
 
@@ -394,7 +396,7 @@ Details:
   arguments win for that agent instance. This includes `api_key`, `api_base`,
   `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
   `max_retries`, `temperature`, `top_p`, `presence_penalty`,
-  `compact_trigger_tokens`, `max_rounds`, and
+  `compact_trigger_tokens`, provider-specific `extra_body`, `max_rounds`, and
   `max_runtime_seconds`.
 - Environment variables for these runtime settings use the upper-case form of
   the Python argument name, for example `max_rounds` -> `MAX_ROUNDS` and
@@ -402,8 +404,9 @@ Details:
 - If a setting exists both as a command-line argument and an environment-level
   default, the command-line argument wins for that run. For example,
   `--workspace-root` overrides `WORKSPACE_ROOT`.
-- In API server mode, request-local options such as `model` and
-  `extra_body["workspace-root"]` override server defaults only for that request.
+- In API server mode, request-local options such as `model`,
+  `extra_body["workspace-root"]`, and `extra_body["llm-extra-body"]` override
+  server defaults only for that request.
 - Process environment variables already exported in the shell are not
   overwritten by `.env`.
 - `.env` fills missing environment variables only; it is a convenient local
@@ -426,6 +429,29 @@ Details:
   `COMPACT_TRIGGER_TOKENS` come from process environment variables or
   `.env` in CLI mode. Use the Python API when these need to be set
   programmatically per agent.
+
+### Provider-Specific Extra Body
+
+Some OpenAI-compatible providers expose request fields that are not part of the
+standard OpenAI SDK surface, such as model-specific thinking switches.
+ResearchHarness supports these fields through a single provider-specific
+`extra_body` object and forwards it unchanged to the underlying OpenAI SDK call.
+ResearchHarness does not interpret these keys and does not hard-code provider
+names or fields.
+
+Use the same JSON object across modes:
+
+| Mode | How to pass it |
+|---|---|
+| Python import | `create_agent(..., extra_body={"enable_thinking": False})` |
+| CLI | `--llm-extra-body-json '{"enable_thinking": false}'` |
+| OpenAI-compatible API server | OpenAI SDK `extra_body={"llm-extra-body": {"enable_thinking": false}}` |
+
+The value must be a JSON object / Python dictionary. Invalid values are rejected
+before the agent run starts. If the upstream provider does not support a field,
+the provider may reject the request. Provider thinking / reasoning modes may
+consume extra output budget, so raise `MAX_OUTPUT_TOKENS` or
+`max_output_tokens` when enabling them.
 
 ### Extending the Base Agent
 
@@ -500,6 +526,19 @@ Each `--images` path must exist. ResearchHarness copies every image into
 part, and includes each saved relative path in the user text so later rounds can
 recover images with `ReadImage`.
 
+Pass provider-specific OpenAI-compatible request options when a backend exposes
+extra request fields:
+
+```bash
+python3 run_agent.py "your prompt" \
+  --llm-extra-body-json '{"enable_thinking": false}'
+```
+
+ResearchHarness forwards this JSON object as the OpenAI SDK `extra_body`. It is
+not interpreted by ResearchHarness and should only contain fields supported by
+your model provider. Thinking / reasoning modes can require a larger output
+token budget than non-thinking calls.
+
 In an interactive terminal, the CLI stays open after the final answer and asks
 for a follow-up prompt. The next run keeps the previous message history,
 including tool results and saved image path hints, so the agent can continue the
@@ -545,6 +584,7 @@ agent = create_agent(
     max_input_tokens=131072,
     max_output_tokens=4096,
     compact_trigger_tokens="96k",
+    extra_body={"enable_thinking": False},
 )
 
 answer = agent.run(
@@ -561,7 +601,9 @@ Runtime parameters passed to `create_agent(...)` or `run_agent(...)` override
 environment variables for that agent only. Use `max_input_tokens` to match the
 serving engine's context window, `max_output_tokens` to reserve response space,
 and `compact_trigger_tokens` to compact before the model server rejects an
-overlong request.
+overlong request. Use `extra_body={...}` only for provider-specific
+OpenAI-compatible request fields; ResearchHarness validates that it is a
+dictionary and forwards it unchanged.
 
 `role_prompt` is for an inline prompt block. `role_prompt_files=[...]` accepts
 one or more files and appends them in order, matching the repeatable CLI
@@ -785,6 +827,25 @@ Direct model names such as `gpt-5.5` are rejected. The override is local to that
 API request; it does not mutate environment variables and does not affect other
 concurrent requests. The agent run, enabled wrappers, and compaction all use the
 same selected backend model.
+
+### API Provider Extra Body
+
+Some OpenAI-compatible providers expose additional request fields. Pass them in
+the request-local `llm-extra-body` object:
+
+```python
+response = client.chat.completions.create(
+    model="RH--Qwen/Qwen3.5-9B",
+    messages=[{"role": "user", "content": "Answer briefly."}],
+    extra_body={"llm-extra-body": {"enable_thinking": False}},
+)
+```
+
+ResearchHarness validates that `llm-extra-body` is a JSON object and forwards it
+unchanged as the OpenAI SDK `extra_body` for the underlying model call. The
+field is request-local and does not affect other concurrent API requests. If a
+provider's thinking / reasoning mode is enabled, reserve enough completion
+tokens for that mode.
 
 ### API Workspace Root
 

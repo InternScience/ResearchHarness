@@ -138,12 +138,24 @@ In Python import mode, `create_agent(...)` and `run_agent(...)` can override
 model/runtime settings for one agent instance, including `api_key`, `api_base`,
 `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
 `max_retries`, `temperature`, `top_p`, `presence_penalty`,
-`compact_trigger_tokens`, `max_rounds`, and
+`compact_trigger_tokens`, provider-specific `extra_body`, `max_rounds`, and
 `max_runtime_seconds`. Environment variables for these runtime settings use the
 upper-case form of the Python argument name, such as `MAX_ROUNDS`,
 `TIMEOUT_SECONDS`, `MAX_OUTPUT_TOKENS`, and `COMPACT_TRIGGER_TOKENS`. In CLI
 mode, model and sampling options stay compact and come from process environment
 variables or `.env`.
+
+Provider-specific OpenAI-compatible fields use a single `extra_body` object.
+ResearchHarness validates that it is an object and forwards it unchanged to the
+underlying OpenAI SDK request. It does not interpret provider-specific keys.
+Thinking / reasoning provider modes can consume extra output budget, so raise
+`MAX_OUTPUT_TOKENS` or `max_output_tokens` when enabling them.
+
+| Mode | How to pass provider-specific `extra_body` |
+| --- | --- |
+| Python import | `create_agent(..., extra_body={"enable_thinking": False})` |
+| CLI | `--llm-extra-body-json '{"enable_thinking": false}'` |
+| API server | OpenAI SDK `extra_body={"llm-extra-body": {"enable_thinking": false}}` |
 
 Before real use, run:
 
@@ -244,6 +256,7 @@ agent = create_agent(
     max_input_tokens=131072,
     max_output_tokens=4096,
     compact_trigger_tokens="96k",
+    extra_body={"enable_thinking": False},
 )
 
 answer = agent.run(
@@ -554,6 +567,7 @@ Supported request fields:
 | `max_tokens` | no | Compatibility alias for `max_completion_tokens`; accepted with an API trace warning. |
 | `response_format` | no | Passed to the wrappers as an output-format hint. |
 | `workspace-root` | no | Absolute path to an existing workspace directory for this request. If missing or invalid, the default per-request `agent_workspace/` is used. |
+| `llm-extra-body` | no | Provider-specific JSON object forwarded unchanged as the underlying OpenAI SDK `extra_body` for this request. |
 
 Supported message roles:
 

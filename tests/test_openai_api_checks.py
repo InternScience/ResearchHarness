@@ -68,6 +68,7 @@ def main() -> int:
         ],
         "response_format": {"type": "json_object"},
         "max_tokens": 16,
+        "llm-extra-body": {"enable_thinking": False},
     }
 
     prepared = prepare_openai_input(payload["messages"], TMP_DIR)
@@ -149,6 +150,8 @@ def main() -> int:
             fake_seen.setdefault("function_lists", []).append(list(function_list or []))
             fake_seen["model"] = str(llm.get("model", ""))
             fake_seen.setdefault("models", []).append(str(llm.get("model", "")))
+            fake_seen["extra_body"] = llm.get("extra_body", {})
+            fake_seen.setdefault("extra_bodies", []).append(llm.get("extra_body", {}))
 
         def call_compaction_api(self, messages, max_output_tokens=None):
             if messages and messages[0]["content"].startswith("You are the ResearchHarness input wrapper"):
@@ -185,18 +188,25 @@ def main() -> int:
     previous_agent_cls = openai_server.MultiTurnReactAgent
     previous_default_llm_config = openai_server.default_llm_config
     openai_server.MultiTurnReactAgent = FakeAPIAgent
-    openai_server.default_llm_config = lambda model_name=None: {
-        "model": str(model_name or "fake-vision-model"),
-        "api_key": "fake",
-        "api_base": "http://fake.invalid/v1",
-        "generate_cfg": {
-            "max_input_tokens": 10000,
-            "max_retries": 1,
-            "temperature": 0.0,
-            "top_p": 1.0,
-            "presence_penalty": 0.0,
-        },
-    }
+
+    def fake_default_llm_config(model_name=None, extra_body=None):
+        config = {
+            "model": str(model_name or "fake-vision-model"),
+            "api_key": "fake",
+            "api_base": "http://fake.invalid/v1",
+            "generate_cfg": {
+                "max_input_tokens": 10000,
+                "max_retries": 1,
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "presence_penalty": 0.0,
+            },
+        }
+        if extra_body:
+            config["extra_body"] = dict(extra_body)
+        return config
+
+    openai_server.default_llm_config = fake_default_llm_config
     try:
         api_response = run_chat_completion(
             payload,
@@ -272,6 +282,25 @@ def main() -> int:
         )
     except openai_server.OpenAICompatError as exc:
         workspace_alias_rejected = exc.status_code == 400 and "workspace-root" in exc.message
+
+    invalid_llm_extra_body_rejected = False
+    try:
+        invalid_extra_body_payload = {
+            "model": "RH",
+            "llm-extra-body": ["not", "an", "object"],
+            "messages": [{"role": "user", "content": "Use a bad llm extra body field."}],
+        }
+        run_chat_completion(
+            invalid_extra_body_payload,
+            ServerConfig(
+                api_runs_dir=api_runs_root / "invalid_llm_extra_body",
+                input_wrapper=False,
+                output_wrapper=False,
+            ),
+        )
+    except openai_server.OpenAICompatError as exc:
+        invalid_llm_extra_body_rejected = exc.status_code == 400 and "llm-extra-body" in exc.message
+    invalid_llm_extra_body_left_no_runs = not (api_runs_root / "invalid_llm_extra_body").exists()
 
     max_tokens_compat_ok = final_max_completion_tokens({"max_tokens": 16}) == 16
     max_tokens_warning_ok = bool(request_parameter_warnings({"max_tokens": 16}))
@@ -390,10 +419,13 @@ def main() -> int:
         and extra_tool_response["model"] == "RH"
         and explicit_tool_response["model"] == "RH"
         and "fake-vision-model" in fake_seen.get("models", [])
+        and {"enable_thinking": False} in fake_seen.get("extra_bodies", [])
         and any("str_replace_editor" in names and "AskUser" not in names for names in fake_seen.get("function_lists", []))
         and any(names == ["Read", "Write", "Edit", "Bash"] for names in fake_seen.get("function_lists", []))
         and invalid_model_rejected
         and workspace_alias_rejected
+        and invalid_llm_extra_body_rejected
+        and invalid_llm_extra_body_left_no_runs
         and max_tokens_compat_ok
         and max_tokens_warning_ok
         and final_max_completion_tokens({"max_completion_tokens": 16}) == 16
@@ -484,6 +516,8 @@ def main() -> int:
                     "default_parameter_warning": default_parameter_warning,
                     "invalid_model_rejected": invalid_model_rejected,
                     "workspace_alias_rejected": workspace_alias_rejected,
+                    "invalid_llm_extra_body_rejected": invalid_llm_extra_body_rejected,
+                    "invalid_llm_extra_body_left_no_runs": invalid_llm_extra_body_left_no_runs,
                     "max_tokens_compat_ok": max_tokens_compat_ok,
                     "max_tokens_warning_ok": max_tokens_warning_ok,
                     "default_model_selection": [default_model_label, default_backend_model],

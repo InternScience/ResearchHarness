@@ -50,6 +50,7 @@ REQUEST_WORKSPACE_ROOT_ALIAS_FIELDS = (
     "workspace_dir",
     "workspace",
 )
+REQUEST_LLM_EXTRA_BODY_FIELD = "llm-extra-body"
 
 INPUT_WRAPPER_SYSTEM_PROMPT = """You are the ResearchHarness input wrapper.
 
@@ -419,6 +420,15 @@ def request_parameter_warnings(payload: dict[str, Any]) -> list[dict[str, str]]:
     return warnings
 
 
+def request_llm_extra_body(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_value = payload.get(REQUEST_LLM_EXTRA_BODY_FIELD)
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        raise OpenAICompatError(400, f"{REQUEST_LLM_EXTRA_BODY_FIELD} must be a JSON object.")
+    return dict(raw_value)
+
+
 def resolve_request_workspace_root(payload: dict[str, Any], default_workspace_root: Path) -> tuple[Path, dict[str, Any]]:
     for alias in REQUEST_WORKSPACE_ROOT_ALIAS_FIELDS:
         if alias in payload:
@@ -471,6 +481,7 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
     payload = validate_chat_payload(payload)
     requested_model_label, backend_model = resolve_api_model_selection(str(payload.get("model") or API_MODEL_ALIAS))
     payload["model"] = requested_model_label
+    llm_extra_body = request_llm_extra_body(payload)
     request_id = "chatcmpl_" + uuid4().hex
     run_id = "run_" + datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:8]
     run_root = config.api_runs_dir / run_id
@@ -491,7 +502,7 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
         payload["messages"],
         agent_workspace,
     )
-    llm_config = default_llm_config(model_name=backend_model)
+    llm_config = default_llm_config(model_name=backend_model, extra_body=llm_extra_body)
     backend_model = str(llm_config.get("model", ""))
     append_api_event(
         trace_dir,

@@ -630,9 +630,11 @@ def image_context_trace_text(result: Any) -> str:
     return text
 
 
-def default_llm_config(model_name: Optional[str] = None) -> dict:
+def default_llm_config(model_name: Optional[str] = None, extra_body: Optional[dict[str, Any]] = None) -> dict:
     selected_model = str(model_name or "").strip() or default_model_name()
-    return {
+    if extra_body is not None and not isinstance(extra_body, dict):
+        raise ValueError("extra_body must be a dict.")
+    config = {
         "model": selected_model,
         "api_key": os.environ.get("API_KEY", "EMPTY"),
         "api_base": os.environ.get("API_BASE"),
@@ -646,6 +648,9 @@ def default_llm_config(model_name: Optional[str] = None) -> dict:
             "presence_penalty": float(os.environ.get("PRESENCE_PENALTY", str(DEFAULT_PRESENCE_PENALTY))),
         },
     }
+    if extra_body:
+        config["extra_body"] = dict(extra_body)
+    return config
 
 
 def execute_tool_by_name(tool_map: dict[str, Any], tool_name: str, tool_args: Any, **kwargs):
@@ -727,6 +732,13 @@ class MultiTurnReactAgent(BaseAgent):
             raise ValueError('llm["model"] must be a non-empty string.')
         if "generate_cfg" not in llm or not isinstance(llm["generate_cfg"], dict):
             raise ValueError('llm["generate_cfg"] must be a dict.')
+        llm_extra_body = llm.get("extra_body")
+        if llm_extra_body is None:
+            self.llm_extra_body: dict[str, Any] = {}
+        elif isinstance(llm_extra_body, dict):
+            self.llm_extra_body = dict(llm_extra_body)
+        else:
+            raise ValueError('llm["extra_body"] must be a dict.')
 
         self.tool_map = {tool_name: tool_registry[tool_name] for tool_name in requested_tools}
         self.tool_names = list(self.tool_map.keys())
@@ -818,6 +830,8 @@ class MultiTurnReactAgent(BaseAgent):
                         else self.llm_generate_cfg.get("presence_penalty", 1.1)
                     ),
                 )
+                if self.llm_extra_body:
+                    request_kwargs["extra_body"] = dict(self.llm_extra_body)
                 if include_native_tools and self._native_tools:
                     request_kwargs["tools"] = self._native_tools
                     request_kwargs["tool_choice"] = "auto"
@@ -1477,7 +1491,20 @@ def resolve_agent_class_for_role_prompt_files(role_prompt_files: Sequence[str]) 
     return MultiTurnReactAgent
 
 
-def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str], str, list[str], list[str], Optional[bool], list[str], list[str]]:
+def _parse_cli_args(
+    argv: list[str],
+) -> tuple[
+    str,
+    Optional[str],
+    Optional[str],
+    str,
+    list[str],
+    list[str],
+    Optional[bool],
+    list[str],
+    list[str],
+    dict[str, Any],
+]:
     parser = argparse.ArgumentParser(description="Run the local agent directly from agent_base.react_agent.")
     parser.add_argument("prompt", nargs="*", help="Prompt text.")
     parser.add_argument("--prompt-file", help="Optional UTF-8 text file containing the prompt.")
@@ -1525,9 +1552,24 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         metavar="NAME",
         help="Expose an explicit complete tool set for this run. May be passed multiple times. Cannot be combined with --extra-tool.",
     )
+    parser.add_argument(
+        "--llm-extra-body-json",
+        default="",
+        metavar="JSON",
+        help="Provider-specific OpenAI-compatible request extra_body JSON object.",
+    )
     args = parser.parse_args(argv)
     if args.tool_names and args.extra_tools:
         raise ValueError("--tool defines the complete tool set and cannot be combined with --extra-tool.")
+    llm_extra_body: dict[str, Any] = {}
+    if str(args.llm_extra_body_json).strip():
+        try:
+            parsed_extra_body = json.loads(str(args.llm_extra_body_json))
+        except json.JSONDecodeError as exc:
+            raise ValueError("--llm-extra-body-json must be a JSON object.") from exc
+        if not isinstance(parsed_extra_body, dict):
+            raise ValueError("--llm-extra-body-json must be a JSON object.")
+        llm_extra_body = parsed_extra_body
 
     prompt_text = ""
     if args.prompt_file:
@@ -1548,6 +1590,7 @@ def _parse_cli_args(argv: list[str]) -> tuple[str, Optional[str], Optional[str],
         args.chat,
         validate_named_tools(args.tool_names) if args.tool_names else [],
         resolve_extra_tool_names(args.extra_tools),
+        llm_extra_body,
     )
 
 
@@ -1565,6 +1608,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             chat_arg,
             tool_names,
             extra_tools,
+            llm_extra_body,
         ) = _parse_cli_args(argv or sys.argv[1:])
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         forbidden_tools = set(getattr(agent_cls, "forbidden_tool_names", set()))
@@ -1580,7 +1624,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if extra_tools
                 else None
             ),
-            llm=default_llm_config(),
+            llm=default_llm_config(extra_body=llm_extra_body),
             trace_dir=trace_dir,
             role_prompt=role_prompt or None,
         )

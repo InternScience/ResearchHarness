@@ -97,6 +97,11 @@ def single_trace_path(trace_dir: Path) -> Path | None:
     return matches[0]
 
 
+def reset_trace_dir(trace_dir: Path) -> None:
+    shutil.rmtree(trace_dir, ignore_errors=True)
+    trace_dir.mkdir(parents=True, exist_ok=True)
+
+
 def collect_tool_names(rows: list[dict]) -> list[str]:
     tool_names_seen: list[str] = []
     for row in rows:

@@ -56,6 +56,7 @@ def main() -> int:
         top_p=0.7,
         presence_penalty=0.3,
         compact_trigger_tokens="24k",
+        extra_body={"enable_thinking": False},
         max_rounds=12,
         max_runtime_seconds=123,
         workspace_root=str(case_dir / "agent_workspace"),
@@ -97,6 +98,7 @@ def main() -> int:
         "undecorated": lambda: create_agent(model_name="fake-model", tools=[undecorated_tool], require_env=False),
         "missing_annotation": lambda: create_agent(model_name="fake-model", tools=[missing_annotation], require_env=False),
         "duplicate_rejected": lambda: create_agent(model_name="fake-model", tools=[Read, Read], require_env=False),
+        "invalid_extra_body": lambda: create_agent(model_name="fake-model", extra_body=[], require_env=False),
         "mixed_tools_extra": lambda: create_agent(
             model_name="fake-model",
             tools=[Read],
@@ -157,6 +159,7 @@ def main() -> int:
             "api_base": explicit_agent._llm_api_base,
             "timeout_seconds": explicit_agent._llm_timeout_seconds,
             "generate_cfg": explicit_agent.llm_generate_cfg,
+            "extra_body": explicit_agent.llm_extra_body,
             "max_rounds": explicit_agent.max_rounds,
             "max_runtime_seconds": explicit_agent.max_runtime_seconds,
         },
@@ -189,6 +192,7 @@ def main() -> int:
         and details["llm"]["generate_cfg"]["top_p"] == 0.7
         and details["llm"]["generate_cfg"]["presence_penalty"] == 0.3
         and details["llm"]["generate_cfg"]["compact_trigger_tokens"] == "24k"
+        and details["llm"]["extra_body"] == {"enable_thinking": False}
         and details["llm"]["max_rounds"] == 12
         and details["llm"]["max_runtime_seconds"] == 123
         and Bash().name not in explicit_agent.tool_names
@@ -206,6 +210,7 @@ def main() -> int:
         and "undecorated" in errors
         and "missing_annotation" in errors
         and "duplicate_rejected" in errors
+        and "invalid_extra_body" in errors
         and "mixed_tools_extra" in errors
         and "configured_tool_class" in errors
         and "schema_helper_validates_custom_tools" in errors

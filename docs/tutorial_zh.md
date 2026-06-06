@@ -135,10 +135,22 @@ pip install -e . --no-deps
 agent 实例覆盖模型和运行时设置，包括 `api_key`、`api_base`、`model_name`、
 `timeout_seconds`、`max_input_tokens`、`max_output_tokens`、`max_retries`、
 `temperature`、`top_p`、`presence_penalty`、`compact_trigger_tokens`、
-`max_rounds` 和 `max_runtime_seconds`。这些运行时设置的环境变量使用
+provider-specific `extra_body`、`max_rounds` 和 `max_runtime_seconds`。这些运行时设置的环境变量使用
 Python 参数名的大写形式，例如 `MAX_ROUNDS`、`TIMEOUT_SECONDS`、
 `MAX_OUTPUT_TOKENS` 和 `COMPACT_TRIGGER_TOKENS`。CLI 模式保持命令行
 简洁，模型和采样设置主要来自进程环境变量或 `.env`。
+
+provider-specific OpenAI-compatible 字段统一通过 `extra_body` object 传入。
+ResearchHarness 只校验它是 object，并原样转发给底层 OpenAI SDK request；
+不会解释 provider-specific key，也不会写死某个 provider 的字段。
+如果启用 provider 的 thinking / reasoning 类模式，需要为输出预留更多
+token 预算，例如调高 `MAX_OUTPUT_TOKENS` 或 `max_output_tokens`。
+
+| 模式 | 如何传 provider-specific `extra_body` |
+| --- | --- |
+| Python 直接导入 | `create_agent(..., extra_body={"enable_thinking": False})` |
+| CLI | `--llm-extra-body-json '{"enable_thinking": false}'` |
+| API server | OpenAI SDK `extra_body={"llm-extra-body": {"enable_thinking": false}}` |
 
 正式使用前，先运行：
 
@@ -232,6 +244,7 @@ agent = create_agent(
     max_input_tokens=131072,
     max_output_tokens=4096,
     compact_trigger_tokens="96k",
+    extra_body={"enable_thinking": False},
 )
 
 answer = agent.run(
@@ -520,6 +533,7 @@ agent loop 和 compaction，并且只对这个请求生效。
 | `max_tokens` | 否 | `max_completion_tokens` 的兼容别名；接受但会写入 API trace warning。 |
 | `response_format` | 否 | 作为输出格式提示传给 wrapper。 |
 | `workspace-root` | 否 | 本次请求使用的 workspace 绝对路径。只有指向已存在目录时才使用；缺失或无效时回退到默认 per-request `agent_workspace/`。 |
+| `llm-extra-body` | 否 | provider-specific JSON object，会在本次请求中原样转发为底层 OpenAI SDK `extra_body`。 |
 
 支持的 message role：
 

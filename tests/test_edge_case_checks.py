@@ -1706,6 +1706,7 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
             "model": "gpt-5.4",
             "api_base": "http://fake",
             "api_key": "fake",
+            "extra_body": {"enable_thinking": False},
             "generate_cfg": {
                 "max_input_tokens": 10000,
                 "max_output_tokens": 100,
@@ -1763,6 +1764,7 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
         and gpt_client.request_kwargs.get("temperature") == 0.2
         and gpt_client.request_kwargs.get("top_p") == 0.7
         and gpt_client.request_kwargs.get("presence_penalty") == 0.0
+        and gpt_client.request_kwargs.get("extra_body") == {"enable_thinking": False}
         and isinstance(gpt55_client.request_kwargs, dict)
         and gpt55_client.request_kwargs.get("temperature") == 0.2
         and gpt55_client.request_kwargs.get("top_p") == 0.7

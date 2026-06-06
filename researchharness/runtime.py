@@ -24,6 +24,7 @@ def _apply_llm_overrides(
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
     compact_trigger_tokens: Optional[int | str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     if api_key is not None:
         llm["api_key"] = str(api_key)
@@ -44,6 +45,10 @@ def _apply_llm_overrides(
         if value is not None:
             generate_cfg[key] = value
     llm["generate_cfg"] = generate_cfg
+    if extra_body is not None:
+        if not isinstance(extra_body, dict):
+            raise ValueError("extra_body must be a dict.")
+        llm["extra_body"] = dict(extra_body)
     return llm
 
 
@@ -124,6 +129,7 @@ def create_agent(
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
     compact_trigger_tokens: Optional[int | str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
     max_rounds: Optional[int] = None,
     max_runtime_seconds: Optional[int] = None,
     workspace_root: Optional[str] = None,
@@ -157,6 +163,7 @@ def create_agent(
         top_p=top_p,
         presence_penalty=presence_penalty,
         compact_trigger_tokens=compact_trigger_tokens,
+        extra_body=extra_body,
     )
     return MultiTurnReactAgent(
         function_list=function_list,
@@ -185,6 +192,7 @@ def run_agent(
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
     compact_trigger_tokens: Optional[int | str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
     max_rounds: Optional[int] = None,
     max_runtime_seconds: Optional[int] = None,
     trace_dir: Optional[str] = None,
@@ -208,6 +216,7 @@ def run_agent(
         top_p=top_p,
         presence_penalty=presence_penalty,
         compact_trigger_tokens=compact_trigger_tokens,
+        extra_body=extra_body,
         max_rounds=max_rounds,
         max_runtime_seconds=max_runtime_seconds,
         workspace_root=workspace_root,
