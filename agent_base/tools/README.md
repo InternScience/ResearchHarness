@@ -380,6 +380,7 @@ Behavior:
 
 - Uses local `bash`.
 - Returns both `stdout` and `stderr`.
+- Captures process output as bytes, truncates before decoding, and safely handles binary or non-UTF-8 stdout/stderr without terminating the agent session.
 - Timeout produces an explicit error.
 - Short scripts are well suited to a heredoc such as `python3 - <<'PY'`.
 

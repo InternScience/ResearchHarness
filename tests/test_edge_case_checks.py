@@ -1653,6 +1653,130 @@ def check_bash_output_bounding_and_repeat_collapse() -> tuple[bool, str]:
     return ok, result
 
 
+def check_bash_handles_binary_and_invalid_utf8_output() -> tuple[bool, str]:
+    from agent_base.tools.tool_runtime import Bash
+
+    case_dir = TMP_DIR / "bash_binary_output"
+    shutil.rmtree(case_dir, ignore_errors=True)
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "binary.xlsx").write_bytes(b"PK\x03\x04\x00\x00\xff\xb7binary payload")
+
+    tool = Bash()
+    binary_result = tool.call(
+        {
+            "command": "head -c 100 binary.xlsx",
+            "timeout": 10,
+            "max_output_chars": 200,
+        },
+        workspace_root=case_dir,
+    )
+    invalid_stdout_result = tool.call(
+        {
+            "command": "printf '\\267'",
+            "timeout": 10,
+            "max_output_chars": 200,
+        },
+        workspace_root=case_dir,
+    )
+    invalid_stderr_result = tool.call(
+        {
+            "command": "python3 -c 'import sys; sys.stderr.buffer.write(bytes([0xb7]))'",
+            "timeout": 10,
+            "max_output_chars": 200,
+        },
+        workspace_root=case_dir,
+    )
+
+    combined = "\n\n".join([binary_result, invalid_stdout_result, invalid_stderr_result])
+    ok = (
+        "binary output omitted" in binary_result
+        and "non-UTF-8 bytes decoded with replacement characters" in invalid_stdout_result
+        and "non-UTF-8 bytes decoded with replacement characters" in invalid_stderr_result
+        and "UnicodeDecodeError" not in combined
+        and combined.count("exit_code: 0") == 3
+    )
+    return ok, combined
+
+
+def check_tool_exception_is_returned_as_tool_result() -> tuple[bool, str]:
+    from agent_base.react_agent import MultiTurnReactAgent
+
+    case_dir = TMP_DIR / "tool_exception_result"
+    trace_dir = case_dir / "traces"
+    shutil.rmtree(case_dir, ignore_errors=True)
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    class FakeAgent(MultiTurnReactAgent):
+        def __init__(self):
+            super().__init__(
+                function_list=["Bash"],
+                llm={
+                    "model": "fake-model",
+                    "generate_cfg": {
+                        "max_input_tokens": 10000,
+                        "max_output_tokens": 512,
+                        "max_retries": 1,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                        "presence_penalty": 0.0,
+                    },
+                },
+                trace_dir=str(trace_dir),
+                max_rounds=3,
+            )
+            self._turn = 0
+
+        def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
+            self._turn += 1
+            if self._turn == 1:
+                return {
+                    "status": "ok",
+                    "finish_reason": "tool_calls",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_exploding_bash",
+                            "type": "function",
+                            "function": {
+                                "name": "Bash",
+                                "arguments": json.dumps({"command": "echo should_not_run"}),
+                            },
+                        }
+                    ],
+                }
+            tool_messages = [message for message in msgs if message.get("role") == "tool"]
+            tool_text = str(tool_messages[-1].get("content", "")) if tool_messages else "missing tool message"
+            return {
+                "status": "ok",
+                "finish_reason": "stop",
+                "content": f"Observed tool result: {tool_text}",
+                "tool_calls": [],
+            }
+
+        def custom_call_tool(self, tool_name: str, tool_args: object, **kwargs):
+            raise RuntimeError("synthetic tool failure")
+
+    agent = FakeAgent()
+    session = agent._run_session("Exercise tool exception handling.", workspace_root=str(case_dir))
+    trace_records = load_trace_records(single_trace_path(trace_dir))
+    tool_texts = [record.get("text", "") for record in trace_records if record.get("role") == "tool"]
+    detail = json.dumps(
+        {
+            "termination": session.get("termination"),
+            "result_text": session.get("result_text"),
+            "tool_texts": tool_texts,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        session.get("termination") == "result"
+        and "Tool execution error: RuntimeError: synthetic tool failure" in session.get("result_text", "")
+        and any("Tool execution error: RuntimeError: synthetic tool failure" in text for text in tool_texts)
+    )
+    return ok, detail
+
+
 def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, str]:
     from agent_base.react_agent import MultiTurnReactAgent
 
@@ -2008,6 +2132,8 @@ def main() -> int:
         ("Tool schema provider compatibility", check_tool_schemas_avoid_provider_incompatible_mixed_types),
         ("Plaintext result max rounds", check_plaintext_result_rejection_hits_max_rounds),
         ("Bash output bounding", check_bash_output_bounding_and_repeat_collapse),
+        ("Bash binary output safety", check_bash_handles_binary_and_invalid_utf8_output),
+        ("Tool exception result", check_tool_exception_is_returned_as_tool_result),
     ]
 
     failures: list[str] = []

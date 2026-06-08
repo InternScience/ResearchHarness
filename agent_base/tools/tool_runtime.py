@@ -31,6 +31,7 @@ DEFAULT_OUTPUT_CHARS = 20000
 DEFAULT_YIELD_MS = 200
 REPEAT_COLLAPSE_THRESHOLD = 3
 
+
 def _default_shell() -> str:
     return shutil.which("bash") or "/bin/bash"
 
@@ -98,6 +99,54 @@ def _bounded_output(text: str, *, max_output_chars: int = DEFAULT_OUTPUT_CHARS) 
     suffix = f"\n[output truncated: omitted {omitted} chars]\n"
     keep = max(0, max_output_chars - len(suffix))
     return compressed[:keep] + suffix
+
+
+def _looks_binary_output(data: bytes) -> bool:
+    if not data:
+        return False
+    sample = data[:4096]
+    if b"\x00" in sample:
+        return True
+    allowed_controls = {9, 10, 12, 13}
+    control_count = sum(1 for byte in sample if byte < 32 and byte not in allowed_controls)
+    return control_count / max(len(sample), 1) > 0.05
+
+
+def _truncate_output_bytes(data: bytes, *, max_output_chars: int) -> tuple[bytes, bool, int]:
+    max_output_bytes = max(1, int(max_output_chars))
+    if len(data) <= max_output_bytes:
+        return data, False, 0
+    omitted = len(data) - max_output_bytes
+    suffix = f"\n[output truncated before decoding: omitted {omitted} bytes]\n".encode("utf-8")
+    keep = max(0, max_output_bytes - len(suffix))
+    return data[:keep] + suffix, True, omitted
+
+
+def _safe_process_output(data: Union[str, bytes, None], *, max_output_chars: int = DEFAULT_OUTPUT_CHARS) -> str:
+    if data is None or data == "":
+        return ""
+    if isinstance(data, str):
+        return _bounded_output(data, max_output_chars=max_output_chars)
+
+    if not data:
+        return ""
+    if _looks_binary_output(data):
+        note = (
+            f"[binary output omitted: {len(data)} bytes. "
+            "Use file or a format-aware reader such as openpyxl/scipy.io.loadmat for binary files.]"
+        )
+        if len(data) > max_output_chars:
+            note += f"\n[output truncated before decoding: omitted {len(data) - max_output_chars} bytes]"
+        return note
+
+    bounded, _, _ = _truncate_output_bytes(data, max_output_chars=max_output_chars)
+    try:
+        decoded = bounded.decode("utf-8")
+        prefix = ""
+    except UnicodeDecodeError:
+        decoded = bounded.decode("utf-8", errors="replace")
+        prefix = "[non-UTF-8 bytes decoded with replacement characters]\n"
+    return _bounded_output(prefix + decoded, max_output_chars=max_output_chars)
 
 
 class Bash(ToolBase):
@@ -178,7 +227,7 @@ class Bash(ToolBase):
                 command,
                 shell=True,
                 capture_output=True,
-                text=True,
+                text=False,
                 timeout=effective_timeout,
                 cwd=str(cwd),
                 env=sanitized_subprocess_env(base_root=base_root),
@@ -190,8 +239,8 @@ class Bash(ToolBase):
             return f"[Bash] Error executing command: {exc}"
 
         parts = [f"exit_code: {proc.returncode}"]
-        stdout = _bounded_output(proc.stdout, max_output_chars=max_output_chars)
-        stderr = _bounded_output(proc.stderr, max_output_chars=max_output_chars)
+        stdout = _safe_process_output(proc.stdout, max_output_chars=max_output_chars)
+        stderr = _safe_process_output(proc.stderr, max_output_chars=max_output_chars)
         if stdout:
             parts.append(f"stdout:\n{stdout}")
         if stderr:

@@ -1324,13 +1324,17 @@ class MultiTurnReactAgent(BaseAgent):
                     )
 
                 def execute_tool_item(item: dict[str, Any]) -> tuple[dict[str, Any], Any]:
-                    result = self.custom_call_tool(
-                        str(item["tool_name"]),
-                        item["tool_arguments"],
-                        workspace_root=resolved_workspace_root,
-                        runtime_deadline=runtime_deadline,
-                        model_name=self.model,
-                    )
+                    tool_name = str(item["tool_name"])
+                    try:
+                        result = self.custom_call_tool(
+                            tool_name,
+                            item["tool_arguments"],
+                            workspace_root=resolved_workspace_root,
+                            runtime_deadline=runtime_deadline,
+                            model_name=self.model,
+                        )
+                    except Exception as exc:
+                        result = f"[{tool_name}] Tool execution error: {type(exc).__name__}: {exc}"
                     return item, result
 
                 for batch_indexes in tool_execution_batches([str(item["tool_name"]) for item in tool_call_items]):
