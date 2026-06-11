@@ -14,7 +14,7 @@ def test_count_tokens_treats_special_token_literals_as_plain_text() -> None:
         llm={
             "model": "fake-model",
             "generate_cfg": {
-                "max_input_tokens": 10000,
+                "max_input_tokens": 32768,
                 "max_retries": 1,
                 "temperature": 0.0,
                 "top_p": 1.0,

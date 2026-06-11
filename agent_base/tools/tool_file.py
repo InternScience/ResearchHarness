@@ -29,9 +29,10 @@ DEFAULT_LLM_IMAGE_MAX_BYTES = 512 * 1024
 DEFAULT_LLM_IMAGE_JPEG_QUALITY = 85
 MIN_LLM_IMAGE_JPEG_QUALITY = 45
 MIN_LLM_IMAGE_EDGE = 256
+DEFAULT_LOCAL_MAX_CHARS = 8192
 DEFAULT_GLOB_MAX_RESULTS = 200
 DEFAULT_GREP_MAX_RESULTS = 100
-DEFAULT_GREP_MAX_CHARS = 20000
+DEFAULT_GREP_MAX_CHARS = DEFAULT_LOCAL_MAX_CHARS
 
 
 def resolve_file_path(path_value: str, *, base_root: Optional[Path] = None) -> Path:
@@ -86,7 +87,7 @@ class Read(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 20000.",
+                "description": "Maximum number of characters to return. Default is 8192.",
             },
         },
         "required": ["path"],
@@ -107,7 +108,7 @@ class Read(ToolBase):
 
         start_line_raw = params.get("start_line", 1)
         end_line_raw = params.get("end_line")
-        max_chars_raw = params.get("max_chars", 20000)
+        max_chars_raw = params.get("max_chars", DEFAULT_LOCAL_MAX_CHARS)
         try:
             start_line = int(start_line_raw)
             end_line = end_line_raw
@@ -172,7 +173,7 @@ class ReadPDF(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 20000.",
+                "description": "Maximum number of characters to return. Default is 8192.",
             },
             "max_image_paths": {
                 "type": "integer",
@@ -193,7 +194,7 @@ class ReadPDF(ToolBase):
         base_root = kwargs.get("workspace_root")
 
         try:
-            max_chars = int(params.get("max_chars", 20000))
+            max_chars = int(params.get("max_chars", DEFAULT_LOCAL_MAX_CHARS))
             max_image_paths = int(params.get("max_image_paths", 20))
         except (TypeError, ValueError):
             return "[ReadPDF] max_chars and max_image_paths must be integers."
@@ -556,7 +557,7 @@ class Grep(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 20000.",
+                "description": "Maximum number of characters to return. Default is 8192.",
             },
         },
         "required": ["pattern"],
@@ -843,11 +844,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     read_parser.add_argument("path")
     read_parser.add_argument("--start-line", type=int, default=1)
     read_parser.add_argument("--end-line", type=int)
-    read_parser.add_argument("--max-chars", type=int, default=20000)
+    read_parser.add_argument("--max-chars", type=int, default=DEFAULT_LOCAL_MAX_CHARS)
 
     pdf_parser = subparsers.add_parser("pdf", help="Run ReadPDF on a PDF file.")
     pdf_parser.add_argument("path")
-    pdf_parser.add_argument("--max-chars", type=int, default=20000)
+    pdf_parser.add_argument("--max-chars", type=int, default=DEFAULT_LOCAL_MAX_CHARS)
 
     image_parser = subparsers.add_parser("image", help="Run ReadImage on an image file.")
     image_parser.add_argument("path")

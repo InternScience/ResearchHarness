@@ -51,6 +51,8 @@ def main() -> int:
         timeout_seconds=12.5,
         max_input_tokens=32768,
         max_output_tokens=4096,
+        recent_history_budget_tokens=8192,
+        compact_summary_max_tokens=4096,
         max_retries=2,
         temperature=0.2,
         top_p=0.7,
@@ -187,6 +189,8 @@ def main() -> int:
         and details["llm"]["timeout_seconds"] == 12.5
         and details["llm"]["generate_cfg"]["max_input_tokens"] == 32768
         and details["llm"]["generate_cfg"]["max_output_tokens"] == 4096
+        and details["llm"]["generate_cfg"]["recent_history_budget_tokens"] == 8192
+        and details["llm"]["generate_cfg"]["compact_summary_max_tokens"] == 4096
         and details["llm"]["generate_cfg"]["max_retries"] == 2
         and details["llm"]["generate_cfg"]["temperature"] == 0.2
         and details["llm"]["generate_cfg"]["top_p"] == 0.7

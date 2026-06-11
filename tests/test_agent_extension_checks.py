@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import sys
 import threading
 from dataclasses import asdict, dataclass
@@ -25,6 +26,7 @@ class AgentExtensionResult:
 
 def main() -> int:
     bootstrap()
+    os.environ["COMPACT_TRIGGER_TOKENS"] = "8k"
 
     from agent_base import agent_role
     from agent_base.prompt import SYSTEM_PROMPT
@@ -58,7 +60,7 @@ def main() -> int:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -94,7 +96,7 @@ def main() -> int:
         llm={
             "model": "fake-model",
             "generate_cfg": {
-                "max_input_tokens": 10000,
+                "max_input_tokens": 32768,
                 "max_retries": 1,
                 "temperature": 0.0,
                 "top_p": 1.0,
@@ -110,7 +112,7 @@ def main() -> int:
             llm={
                 "model": "fake-model",
                 "generate_cfg": {
-                    "max_input_tokens": 10000,
+                    "max_input_tokens": 32768,
                     "max_retries": 1,
                     "temperature": 0.0,
                     "top_p": 1.0,
@@ -129,7 +131,7 @@ def main() -> int:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -197,7 +199,7 @@ def main() -> int:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,

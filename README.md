@@ -86,9 +86,11 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-06-11) Context-compaction token budgets are now explicit and validated: `RECENT_HISTORY_BUDGET_TOKENS` and `COMPACT_SUMMARY_MAX_TOKENS` are configurable, and invalid token budgets raise errors instead of being silently adjusted.
+
 🚩 **Update** (2026-06-06) Provider-specific OpenAI-compatible request options can now be passed consistently across Python import mode, CLI, and API server mode through a validated `extra_body` object.
 
-🚩 **Update** (2026-06-06) Runtime configuration names are now consolidated, the duplicate LLM-call loop limit has been removed, and the default long-run profile now uses `MAX_ROUNDS=500`, `MAX_RUNTIME_SECONDS=10800`, `TIMEOUT_SECONDS=1200`, `MAX_INPUT_TOKENS=128000`, and `COMPACT_TRIGGER_TOKENS=96k`.
+🚩 **Update** (2026-06-06) Runtime configuration names are now consolidated, the duplicate LLM-call loop limit has been removed, and the default long-run profile now uses `MAX_ROUNDS=500`, `MAX_RUNTIME_SECONDS=10800`, `TIMEOUT_SECONDS=1200`, `MAX_INPUT_TOKENS=131072`, and `COMPACT_TRIGGER_TOKENS=96k`.
 
 🚩 **Update** (2026-05-22) Added a real API smoke test that runs the five SGI benchmark README server commands and OpenAI SDK examples, then validates each expected final-answer format.
 
@@ -96,10 +98,10 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
 
-🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
-
 <details>
 <summary>👉 More News (Click to expand)</summary>
+
+🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
 
 🚩 **Update** (2026-05-20) Tool calls now use single-request semantics, and the ReAct runtime can execute adjacent read-only tool calls concurrently. For example, `Read, Read, Edit, Read` runs as `[Read + Read]`, then `[Edit]`, then `[Read]`, preserving mutation boundaries while improving retrieval throughput.
 
@@ -354,6 +356,8 @@ Optional variables:
 - `WEBFETCH_MAX_CHARS`
 - `MAX_OUTPUT_TOKENS`
 - `MAX_INPUT_TOKENS`
+- `RECENT_HISTORY_BUDGET_TOKENS`
+- `COMPACT_SUMMARY_MAX_TOKENS`
 - `MAX_RETRIES`
 - `TEMPERATURE`
 - `TOP_P`
@@ -395,8 +399,9 @@ Details:
 - In Python import mode, explicit `create_agent(...)` / `run_agent(...)`
   arguments win for that agent instance. This includes `api_key`, `api_base`,
   `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
-  `max_retries`, `temperature`, `top_p`, `presence_penalty`,
-  `compact_trigger_tokens`, provider-specific `extra_body`, `max_rounds`, and
+  `recent_history_budget_tokens`, `compact_summary_max_tokens`, `max_retries`,
+  `temperature`, `top_p`, `presence_penalty`, `compact_trigger_tokens`,
+  provider-specific `extra_body`, `max_rounds`, and
   `max_runtime_seconds`.
 - Environment variables for these runtime settings use the upper-case form of
   the Python argument name, for example `max_rounds` -> `MAX_ROUNDS` and
@@ -425,10 +430,11 @@ Details:
   `--no-chat` for one-shot behavior or `--chat` to force follow-up mode.
 - CLI mode intentionally keeps the command surface compact. Model and sampling
   settings such as `API_KEY`, `API_BASE`, `MODEL_NAME`, `TEMPERATURE`,
-  `MAX_INPUT_TOKENS`, `MAX_OUTPUT_TOKENS`, and
-  `COMPACT_TRIGGER_TOKENS` come from process environment variables or
-  `.env` in CLI mode. Use the Python API when these need to be set
-  programmatically per agent.
+  `MAX_INPUT_TOKENS`, `MAX_OUTPUT_TOKENS`,
+  `RECENT_HISTORY_BUDGET_TOKENS`, `COMPACT_SUMMARY_MAX_TOKENS`, and
+  `COMPACT_TRIGGER_TOKENS` come from process environment variables or `.env`
+  in CLI mode. Use the Python API when these need to be set programmatically
+  per agent.
 
 ### Provider-Specific Extra Body
 
@@ -583,6 +589,8 @@ agent = create_agent(
     tools=[Read, Write, Bash, add_numbers],
     max_input_tokens=131072,
     max_output_tokens=4096,
+    recent_history_budget_tokens=8192,
+    compact_summary_max_tokens=8192,
     compact_trigger_tokens="96k",
     extra_body={"enable_thinking": False},
 )
@@ -600,10 +608,12 @@ workspace_root="./other_workspace")`.
 Runtime parameters passed to `create_agent(...)` or `run_agent(...)` override
 environment variables for that agent only. Use `max_input_tokens` to match the
 serving engine's context window, `max_output_tokens` to reserve response space,
-and `compact_trigger_tokens` to compact before the model server rejects an
-overlong request. Use `extra_body={...}` only for provider-specific
-OpenAI-compatible request fields; ResearchHarness validates that it is a
-dictionary and forwards it unchanged.
+`recent_history_budget_tokens` to retain raw recent turns after compaction,
+`compact_summary_max_tokens` to cap compaction-summary output, and
+`compact_trigger_tokens` to compact before the model server rejects an overlong
+request. Use `extra_body={...}` only for provider-specific OpenAI-compatible
+request fields; ResearchHarness validates that it is a dictionary and forwards
+it unchanged.
 
 `role_prompt` is for an inline prompt block. `role_prompt_files=[...]` accepts
 one or more files and appends them in order, matching the repeatable CLI
@@ -1097,8 +1107,13 @@ same file usable for debugging, replay, benchmark inspection, and optional
 step-level training or distillation.
 
 Long runs can trigger automatic context compaction before the input budget is
-exhausted. By default, the trigger budget is `96k`. You can override it when
-you want earlier or later compaction:
+exhausted. By default, the trigger budget is `96k`. If
+`COMPACT_TRIGGER_TOKENS` is unset, the trigger is computed as
+`MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS - COMPACT_SUMMARY_MAX_TOKENS`; invalid
+token budgets raise an error instead of being silently adjusted. An explicit
+trigger must also be smaller than `MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS`, so
+there is still room for the requested response. You can override the trigger
+when you want earlier or later compaction:
 
 ```bash
 COMPACT_TRIGGER_TOKENS=16k python3 run_agent.py "your prompt"
@@ -1113,6 +1128,8 @@ agent = create_agent(
     model_name="gpt-5.4",
     max_input_tokens=65536,
     max_output_tokens=4096,
+    recent_history_budget_tokens=8192,
+    compact_summary_max_tokens=8192,
     compact_trigger_tokens="32k",
 )
 ```

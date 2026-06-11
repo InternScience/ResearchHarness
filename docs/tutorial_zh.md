@@ -108,15 +108,17 @@ pip install -e . --no-deps
 | `MAX_RUNTIME_SECONDS` | `10800` | 单次 agent run 的最大运行秒数。 |
 | `TIMEOUT_SECONDS` | `1200` | 单次 LLM API 请求超时时间。 |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | 单次 WebFetch 工具调用的总超时时间。 |
-| `WEBFETCH_MAX_CHARS` | `40960` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
-| `MAX_OUTPUT_TOKENS` | `40960` | 请求模型输出的最大 token 数。 |
-| `MAX_INPUT_TOKENS` | `128000` | runtime token accounting 使用的输入 token 预算。 |
-| `MAX_RETRIES` | `10` | 瞬时 LLM API 错误最大重试次数。 |
+| `WEBFETCH_MAX_CHARS` | `8192` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
+| `MAX_OUTPUT_TOKENS` | `16384` | 请求模型输出的最大 token 数。 |
+| `MAX_INPUT_TOKENS` | `131072` | runtime token accounting 使用的输入 token 预算。 |
+| `RECENT_HISTORY_BUDGET_TOKENS` | `8192` | 上下文压缩后保留的原始最近轮次 token 预算。 |
+| `COMPACT_SUMMARY_MAX_TOKENS` | `8192` | 上下文压缩摘要请求的最大输出 token 数。 |
+| `MAX_RETRIES` | `5` | 瞬时 LLM API 错误最大重试次数。 |
 | `TEMPERATURE` | `0.6` | 主模型 temperature。 |
 | `TOP_P` | `0.95` | 主模型 top-p。 |
 | `PRESENCE_PENALTY` | `1.00` | provider 支持时使用的 presence penalty。 |
 | `COMPACT_TRIGGER_TOKENS` | `96k` | 自动上下文压缩触发阈值。 |
-| `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | 每个 image content part 的 token 估计。 |
+| `IMAGE_PART_TOKEN_ESTIMATE` | `2048` | 每个 image content part 的 token 估计。 |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | 发送给多模态模型的图片最大边长。 |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | 发送给多模态模型的压缩图片最大字节数。 |
 | `LLM_IMAGE_JPEG_QUALITY` | `85` | 图片压缩时的初始 JPEG 质量。 |
@@ -133,12 +135,13 @@ pip install -e . --no-deps
 
 在 Python 直接导入模式下，`create_agent(...)` 和 `run_agent(...)` 可以为当前
 agent 实例覆盖模型和运行时设置，包括 `api_key`、`api_base`、`model_name`、
-`timeout_seconds`、`max_input_tokens`、`max_output_tokens`、`max_retries`、
+`timeout_seconds`、`max_input_tokens`、`max_output_tokens`、
+`recent_history_budget_tokens`、`compact_summary_max_tokens`、`max_retries`、
 `temperature`、`top_p`、`presence_penalty`、`compact_trigger_tokens`、
 provider-specific `extra_body`、`max_rounds` 和 `max_runtime_seconds`。这些运行时设置的环境变量使用
 Python 参数名的大写形式，例如 `MAX_ROUNDS`、`TIMEOUT_SECONDS`、
-`MAX_OUTPUT_TOKENS` 和 `COMPACT_TRIGGER_TOKENS`。CLI 模式保持命令行
-简洁，模型和采样设置主要来自进程环境变量或 `.env`。
+`MAX_OUTPUT_TOKENS`、`RECENT_HISTORY_BUDGET_TOKENS` 和
+`COMPACT_TRIGGER_TOKENS`。CLI 模式保持命令行简洁，模型和采样设置主要来自进程环境变量或 `.env`。
 
 provider-specific OpenAI-compatible 字段统一通过 `extra_body` object 传入。
 ResearchHarness 只校验它是 object，并原样转发给底层 OpenAI SDK request；
@@ -243,6 +246,8 @@ agent = create_agent(
     tools=[Read, Write, Bash, add_numbers],
     max_input_tokens=131072,
     max_output_tokens=4096,
+    recent_history_budget_tokens=8192,
+    compact_summary_max_tokens=8192,
     compact_trigger_tokens="96k",
     extra_body={"enable_thinking": False},
 )
@@ -258,7 +263,13 @@ answer = agent.run(
 `--role-prompt-file` 语义一致。
 
 `max_input_tokens` 应与模型服务端的上下文窗口对齐，`max_output_tokens` 用于
-预留输出空间，`compact_trigger_tokens` 用于在后端拒绝超长请求前提前压缩。
+预留输出空间，`recent_history_budget_tokens` 控制压缩后保留的原始最近轮次，
+`compact_summary_max_tokens` 控制压缩摘要输出上限，`compact_trigger_tokens`
+用于在后端拒绝超长请求前提前压缩。
+如果没有设置 `compact_trigger_tokens` / `COMPACT_TRIGGER_TOKENS`，触发阈值为
+`MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS - COMPACT_SUMMARY_MAX_TOKENS`；不合理的
+预算会直接报错，不会被静默替换。显式触发阈值也必须小于
+`MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS`，以便为模型回复保留空间。
 
 `tools=None` 表示使用默认工具集。`tools=[...]` 表示完整、显式的工具全集；
 没有列出的默认工具会被移除。Python 代码里优先传 `Read`、`Bash` 这类

@@ -68,13 +68,15 @@ OPTIONAL_TOOLS = [
 ]
 OPTIONAL_TOOL_MAP = {tool.name: tool for tool in OPTIONAL_TOOLS}
 ALL_TOOL_MAP = {**AVAILABLE_TOOL_MAP, **OPTIONAL_TOOL_MAP}
-DEFAULT_IMAGE_TOKEN_ESTIMATE = 1536
+DEFAULT_IMAGE_TOKEN_ESTIMATE = 2 * 1024
 DEFAULT_MODEL_NAME = "gpt-5.5"
 DEFAULT_MAX_ROUNDS = 500
 DEFAULT_MAX_RUNTIME_SECONDS = 10800
-DEFAULT_MAX_OUTPUT_TOKENS = 40960
-DEFAULT_MAX_INPUT_TOKENS = 128000
-DEFAULT_MAX_RETRIES = 10
+DEFAULT_MAX_OUTPUT_TOKENS = 16 * 1024
+DEFAULT_MAX_INPUT_TOKENS = 128 * 1024
+DEFAULT_RECENT_HISTORY_BUDGET_TOKENS = 8 * 1024
+DEFAULT_COMPACT_SUMMARY_MAX_TOKENS = 8 * 1024
+DEFAULT_MAX_RETRIES = 5
 DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
 DEFAULT_PRESENCE_PENALTY = 1.00
@@ -642,6 +644,12 @@ def default_llm_config(model_name: Optional[str] = None, extra_body: Optional[di
         "generate_cfg": {
             "max_input_tokens": int(os.environ.get("MAX_INPUT_TOKENS", str(DEFAULT_MAX_INPUT_TOKENS))),
             "max_output_tokens": int(os.environ.get("MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS))),
+            "recent_history_budget_tokens": int(
+                os.environ.get("RECENT_HISTORY_BUDGET_TOKENS", str(DEFAULT_RECENT_HISTORY_BUDGET_TOKENS))
+            ),
+            "compact_summary_max_tokens": int(
+                os.environ.get("COMPACT_SUMMARY_MAX_TOKENS", str(DEFAULT_COMPACT_SUMMARY_MAX_TOKENS))
+            ),
             "max_retries": int(os.environ.get("MAX_RETRIES", str(DEFAULT_MAX_RETRIES))),
             "temperature": float(os.environ.get("TEMPERATURE", str(DEFAULT_TEMPERATURE))),
             "top_p": float(os.environ.get("TOP_P", str(DEFAULT_TOP_P))),
@@ -1026,13 +1034,21 @@ class MultiTurnReactAgent(BaseAgent):
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
         max_input_tokens = int(self.llm_generate_cfg.get("max_input_tokens", DEFAULT_MAX_INPUT_TOKENS))
         max_output_tokens = int(self.llm_generate_cfg.get("max_output_tokens", max_output_tokens_default()))
+        recent_history_budget_tokens = int(
+            self.llm_generate_cfg.get("recent_history_budget_tokens", DEFAULT_RECENT_HISTORY_BUDGET_TOKENS)
+        )
+        compact_summary_max_tokens = int(
+            self.llm_generate_cfg.get("compact_summary_max_tokens", DEFAULT_COMPACT_SUMMARY_MAX_TOKENS)
+        )
         compact_trigger_tokens = self.llm_generate_cfg.get("compact_trigger_tokens")
         if compact_trigger_tokens is None:
-            compact_trigger_tokens = os.getenv("COMPACT_TRIGGER_TOKENS", "96k")
+            compact_trigger_tokens = os.getenv("COMPACT_TRIGGER_TOKENS")
         model_profile = resolve_model_profile(
             self.model,
             configured_max_input_tokens=max_input_tokens,
             configured_max_output_tokens=max_output_tokens,
+            configured_recent_history_budget_tokens=recent_history_budget_tokens,
+            configured_compact_summary_max_tokens=compact_summary_max_tokens,
             compact_trigger_tokens=compact_trigger_tokens,
         )
         agent_runtime_limit = self.max_runtime_seconds

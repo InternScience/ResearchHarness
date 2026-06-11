@@ -10,6 +10,7 @@ import time
 import types
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
@@ -180,7 +181,7 @@ def check_agent_runtime_limit_on_tool_execution() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -258,7 +259,7 @@ def check_parallel_readimage_tool_message_order() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -395,7 +396,7 @@ def check_deepseek_readimage_falls_back_to_text_only_context() -> tuple[bool, st
                 llm={
                     "model": "deepseek-v4-pro",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -491,7 +492,7 @@ def check_old_image_parts_are_omitted_from_followup_requests_but_traced() -> tup
                 llm={
                     "model": "fake-vision-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -601,7 +602,7 @@ def check_reasoning_content_is_preserved_across_tool_rounds() -> tuple[bool, str
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -709,7 +710,7 @@ def check_visible_think_and_answer_tags_are_plain_final_text() -> tuple[bool, st
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -762,7 +763,7 @@ def check_tool_like_text_tags_can_be_plain_final_text() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -814,7 +815,7 @@ def check_mixed_text_and_tool_calls_are_executed() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -955,7 +956,7 @@ def check_truncated_tool_call_turn_is_replayed_without_execution() -> tuple[bool
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -1071,7 +1072,7 @@ def check_reasoning_replay_error_is_reported_without_recovery() -> tuple[bool, s
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -1162,21 +1163,276 @@ def check_reasoning_replay_error_is_reported_without_recovery() -> tuple[bool, s
 
 
 def check_compact_trigger_token_parser_supports_k_suffix() -> tuple[bool, str]:
-    from agent_base.model_profiles import parse_compact_trigger_tokens
+    from agent_base.model_profiles import parse_compact_trigger_tokens, resolve_model_profile
 
-    parsed_128k = parse_compact_trigger_tokens("128k", context_window=320000)
+    parsed_128k = parse_compact_trigger_tokens("128k", context_window=327680)
     parsed_16k = parse_compact_trigger_tokens("16k", context_window=65536)
     parsed_32k = parse_compact_trigger_tokens("32k", context_window=65536)
+    parsed_too_small = parse_compact_trigger_tokens("128", context_window=65536)
+    parsed_too_large = parse_compact_trigger_tokens("128k", context_window=65536)
+    invalid_trigger_rejected = False
+    invalid_trigger_message = ""
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=65536,
+            configured_max_output_tokens=4096,
+            configured_recent_history_budget_tokens=8192,
+            configured_compact_summary_max_tokens=8192,
+            compact_trigger_tokens="128k",
+        )
+    except ValueError as exc:
+        invalid_trigger_rejected = True
+        invalid_trigger_message = str(exc)
     detail = json.dumps(
         {
             "parsed_128k": parsed_128k,
             "parsed_16k": parsed_16k,
             "parsed_32k": parsed_32k,
+            "parsed_too_small": parsed_too_small,
+            "parsed_too_large": parsed_too_large,
+            "invalid_trigger_rejected": invalid_trigger_rejected,
+            "invalid_trigger_message": invalid_trigger_message,
         },
         ensure_ascii=False,
         indent=2,
     )
-    ok = parsed_128k == 131072 and parsed_16k == 16384 and parsed_32k == 32768
+    ok = (
+        parsed_128k == 131072
+        and parsed_16k == 16384
+        and parsed_32k == 32768
+        and parsed_too_small == 128
+        and parsed_too_large == 131072
+        and invalid_trigger_rejected
+        and "compact_trigger_tokens" in invalid_trigger_message
+        and "max_input_tokens" in invalid_trigger_message
+    )
+    return ok, detail
+
+
+def check_model_profile_respects_configured_output_tokens() -> tuple[bool, str]:
+    from agent_base.model_profiles import resolve_model_profile
+
+    profile = resolve_model_profile(
+        "fake-model",
+        configured_max_input_tokens=131072,
+        configured_max_output_tokens=16384,
+        configured_recent_history_budget_tokens=8192,
+        configured_compact_summary_max_tokens=8192,
+        compact_trigger_tokens="96k",
+    )
+    default_trigger_profile = resolve_model_profile(
+        "fake-model",
+        configured_max_input_tokens=131072,
+        configured_max_output_tokens=16384,
+        configured_recent_history_budget_tokens=8192,
+        configured_compact_summary_max_tokens=8192,
+        compact_trigger_tokens=None,
+    )
+    invalid_rejected = False
+    invalid_message = ""
+    invalid_compact_budget_rejected = False
+    invalid_compact_budget_message = ""
+    invalid_trigger_budget_rejected = False
+    invalid_trigger_budget_message = ""
+    invalid_recent_rejected = False
+    invalid_recent_message = ""
+    small_input_profile = resolve_model_profile(
+        "fake-model",
+        configured_max_input_tokens=512,
+        configured_max_output_tokens=128,
+        configured_recent_history_budget_tokens=128,
+        configured_compact_summary_max_tokens=128,
+        compact_trigger_tokens=None,
+    )
+    invalid_input_rejected = False
+    invalid_input_message = ""
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=131072,
+            configured_max_output_tokens=131072,
+            configured_recent_history_budget_tokens=8192,
+            configured_compact_summary_max_tokens=8192,
+            compact_trigger_tokens="96k",
+        )
+    except ValueError as exc:
+        invalid_rejected = True
+        invalid_message = str(exc)
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=0,
+            configured_max_output_tokens=128,
+            configured_recent_history_budget_tokens=128,
+            configured_compact_summary_max_tokens=128,
+            compact_trigger_tokens=None,
+        )
+    except ValueError as exc:
+        invalid_input_rejected = True
+        invalid_input_message = str(exc)
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=4096,
+            configured_max_output_tokens=2048,
+            configured_recent_history_budget_tokens=1024,
+            configured_compact_summary_max_tokens=2048,
+            compact_trigger_tokens=None,
+        )
+    except ValueError as exc:
+        invalid_compact_budget_rejected = True
+        invalid_compact_budget_message = str(exc)
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=32768,
+            configured_max_output_tokens=8192,
+            configured_recent_history_budget_tokens=8192,
+            configured_compact_summary_max_tokens=8192,
+            compact_trigger_tokens="24k",
+        )
+    except ValueError as exc:
+        invalid_trigger_budget_rejected = True
+        invalid_trigger_budget_message = str(exc)
+    try:
+        resolve_model_profile(
+            "fake-model",
+            configured_max_input_tokens=32768,
+            configured_max_output_tokens=4096,
+            configured_recent_history_budget_tokens=0,
+            configured_compact_summary_max_tokens=8192,
+            compact_trigger_tokens=None,
+        )
+    except ValueError as exc:
+        invalid_recent_rejected = True
+        invalid_recent_message = str(exc)
+
+    detail = json.dumps(
+        {
+            "output_reserve_tokens": profile.output_reserve_tokens,
+            "recent_history_budget_tokens": profile.recent_history_budget_tokens,
+            "compact_summary_max_tokens": profile.compact_summary_max_tokens,
+            "compact_buffer_tokens": profile.compact_buffer_tokens,
+            "default_compact_trigger_tokens": default_trigger_profile.compact_trigger_tokens,
+            "small_input_context_window": small_input_profile.context_window,
+            "small_input_default_compact_trigger_tokens": small_input_profile.compact_trigger_tokens,
+            "invalid_rejected": invalid_rejected,
+            "invalid_message": invalid_message,
+            "invalid_input_rejected": invalid_input_rejected,
+            "invalid_input_message": invalid_input_message,
+            "invalid_compact_budget_rejected": invalid_compact_budget_rejected,
+            "invalid_compact_budget_message": invalid_compact_budget_message,
+            "invalid_trigger_budget_rejected": invalid_trigger_budget_rejected,
+            "invalid_trigger_budget_message": invalid_trigger_budget_message,
+            "invalid_recent_rejected": invalid_recent_rejected,
+            "invalid_recent_message": invalid_recent_message,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        profile.output_reserve_tokens == 16384
+        and profile.recent_history_budget_tokens == 8192
+        and profile.compact_summary_max_tokens == 8192
+        and profile.compact_buffer_tokens == 8192
+        and default_trigger_profile.compact_trigger_tokens == 131072 - 16384 - 8192
+        and small_input_profile.context_window == 512
+        and small_input_profile.compact_trigger_tokens == 512 - 128 - 128
+        and invalid_rejected
+        and "max_output_tokens" in invalid_message
+        and "max_input_tokens" in invalid_message
+        and invalid_input_rejected
+        and "max_input_tokens" in invalid_input_message
+        and invalid_compact_budget_rejected
+        and "compact_summary_max_tokens" in invalid_compact_budget_message
+        and invalid_trigger_budget_rejected
+        and "compact_trigger_tokens" in invalid_trigger_budget_message
+        and "max_input_tokens - max_output_tokens" in invalid_trigger_budget_message
+        and invalid_recent_rejected
+        and "recent_history_budget_tokens" in invalid_recent_message
+    )
+    return ok, detail
+
+
+def check_run_session_uses_formula_when_compact_trigger_is_unset() -> tuple[bool, str]:
+    import agent_base.react_agent as react_agent_module
+    from agent_base.react_agent import MultiTurnReactAgent
+
+    case_dir = TMP_DIR / "compact_trigger_formula_default"
+    shutil.rmtree(case_dir, ignore_errors=True)
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    class FakeAgent(MultiTurnReactAgent):
+        def __init__(self):
+            super().__init__(
+                function_list=[],
+                llm={
+                    "model": "fake-model",
+                    "generate_cfg": {
+                        "max_input_tokens": 32768,
+                        "max_output_tokens": 4096,
+                        "recent_history_budget_tokens": 8192,
+                        "compact_summary_max_tokens": 4096,
+                        "max_retries": 1,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                        "presence_penalty": 0.0,
+                    },
+                },
+                trace_dir=str(case_dir / "traces"),
+            )
+
+        def call_llm_api(self, msgs, max_tries=10, runtime_deadline=None):
+            return {
+                "status": "ok",
+                "finish_reason": "stop",
+                "content": "done",
+                "tool_calls": [],
+                "usage": {"prompt_tokens": 1024},
+            }
+
+    previous_compact_trigger = os.environ.get("COMPACT_TRIGGER_TOKENS")
+    original_resolve_model_profile = react_agent_module.resolve_model_profile
+    captured: dict[str, Any] = {}
+
+    def spy_resolve_model_profile(*args, **kwargs):
+        captured["compact_trigger_tokens_arg"] = kwargs.get("compact_trigger_tokens")
+        profile = original_resolve_model_profile(*args, **kwargs)
+        captured["resolved_compact_trigger_tokens"] = profile.compact_trigger_tokens
+        captured["compact_trigger_tokens_override"] = profile.compact_trigger_tokens_override
+        return profile
+
+    os.environ.pop("COMPACT_TRIGGER_TOKENS", None)
+    react_agent_module.resolve_model_profile = spy_resolve_model_profile
+    try:
+        agent = FakeAgent()
+        session = agent._run_session("Use default compaction trigger.", workspace_root=str(case_dir))
+    finally:
+        react_agent_module.resolve_model_profile = original_resolve_model_profile
+        if previous_compact_trigger is None:
+            os.environ.pop("COMPACT_TRIGGER_TOKENS", None)
+        else:
+            os.environ["COMPACT_TRIGGER_TOKENS"] = previous_compact_trigger
+
+    expected_trigger = 32768 - 4096 - 4096
+    detail = json.dumps(
+        {
+            "termination": session.get("termination"),
+            "compact_trigger_tokens_arg": captured.get("compact_trigger_tokens_arg"),
+            "resolved_compact_trigger_tokens": captured.get("resolved_compact_trigger_tokens"),
+            "compact_trigger_tokens_override": captured.get("compact_trigger_tokens_override"),
+            "expected_trigger": expected_trigger,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        session.get("termination") == "result"
+        and captured.get("compact_trigger_tokens_arg") is None
+        and captured.get("resolved_compact_trigger_tokens") == expected_trigger
+        and captured.get("compact_trigger_tokens_override") is None
+    )
     return ok, detail
 
 
@@ -1196,7 +1452,7 @@ def check_context_compaction_persists_summary_and_session_state() -> tuple[bool,
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 40000,
+                        "max_input_tokens": 32768,
                         "max_output_tokens": 512,
                         "compact_trigger_tokens": "16k",
                         "max_retries": 1,
@@ -1228,7 +1484,7 @@ def check_context_compaction_persists_summary_and_session_state() -> tuple[bool,
                             },
                         }
                     ],
-                    "usage": {"prompt_tokens": 8000},
+                    "usage": {"prompt_tokens": 8192},
                 }
             if self._turn == 2:
                 return {
@@ -1245,7 +1501,7 @@ def check_context_compaction_persists_summary_and_session_state() -> tuple[bool,
                             },
                         }
                     ],
-                    "usage": {"prompt_tokens": 20000},
+                    "usage": {"prompt_tokens": 16384},
                 }
             self.third_round_messages = msgs
             return {
@@ -1253,7 +1509,7 @@ def check_context_compaction_persists_summary_and_session_state() -> tuple[bool,
                 "finish_reason": "stop",
                 "content": "done",
                 "tool_calls": [],
-                "usage": {"prompt_tokens": 700},
+                "usage": {"prompt_tokens": 1024},
             }
 
         def call_compaction_api(self, msgs, *, runtime_deadline=None, max_output_tokens=None):
@@ -1360,6 +1616,8 @@ def check_context_compaction_refreshes_existing_memory_without_recursive_summary
         "fake-model",
         configured_max_input_tokens=40000,
         configured_max_output_tokens=512,
+        configured_recent_history_budget_tokens=8192,
+        configured_compact_summary_max_tokens=8192,
         compact_trigger_tokens="16k",
     )
     messages = [
@@ -1457,8 +1715,11 @@ def check_context_compaction_failure_is_recorded_before_hard_stop() -> tuple[boo
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 5000,
+                        "max_input_tokens": 4096,
                         "max_output_tokens": 512,
+                        "recent_history_budget_tokens": 1024,
+                        "compact_summary_max_tokens": 1024,
+                        "compact_trigger_tokens": "3k",
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -1487,7 +1748,7 @@ def check_context_compaction_failure_is_recorded_before_hard_stop() -> tuple[boo
                             },
                         }
                     ],
-                    "usage": {"prompt_tokens": 4500},
+                    "usage": {"prompt_tokens": 4096},
                 }
             return {
                 "status": "ok",
@@ -1552,7 +1813,7 @@ def check_terminal_error_can_be_accepted_after_completion_artifact() -> tuple[bo
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -1591,7 +1852,7 @@ def check_plaintext_result_rejection_hits_max_rounds() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -1713,7 +1974,7 @@ def check_tool_exception_is_returned_as_tool_result() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_output_tokens": 512,
                         "max_retries": 1,
                         "temperature": 0.0,
@@ -1810,8 +2071,8 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
             "api_base": "http://fake",
             "api_key": "fake",
             "generate_cfg": {
-                "max_input_tokens": 10000,
-                "max_output_tokens": 100,
+                "max_input_tokens": 32768,
+                "max_output_tokens": 128,
                 "max_retries": 1,
                 "temperature": 0.2,
                 "top_p": 0.7,
@@ -1832,8 +2093,8 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
             "api_key": "fake",
             "extra_body": {"enable_thinking": False},
             "generate_cfg": {
-                "max_input_tokens": 10000,
-                "max_output_tokens": 100,
+                "max_input_tokens": 32768,
+                "max_output_tokens": 128,
                 "max_retries": 1,
                 "temperature": 0.2,
                 "top_p": 0.7,
@@ -1853,8 +2114,8 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
             "api_base": "http://fake",
             "api_key": "fake",
             "generate_cfg": {
-                "max_input_tokens": 10000,
-                "max_output_tokens": 100,
+                "max_input_tokens": 32768,
+                "max_output_tokens": 128,
                 "max_retries": 1,
                 "temperature": 0.2,
                 "top_p": 0.7,
@@ -2009,7 +2270,7 @@ def check_session_state_is_only_written_with_trace_dir() -> tuple[bool, str]:
                 llm={
                     "model": "fake-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_output_tokens": 512,
                         "max_retries": 1,
                         "temperature": 0.0,
@@ -2120,6 +2381,8 @@ def main() -> int:
         ("Mixed text and tool calls executed", check_mixed_text_and_tool_calls_are_executed),
         ("Reasoning replay error reported", check_reasoning_replay_error_is_reported_without_recovery),
         ("Compact trigger parser", check_compact_trigger_token_parser_supports_k_suffix),
+        ("Model profile output reserve", check_model_profile_respects_configured_output_tokens),
+        ("Default compact trigger formula", check_run_session_uses_formula_when_compact_trigger_is_unset),
         ("Context compaction persists state", check_context_compaction_persists_summary_and_session_state),
         ("Session state requires trace dir", check_session_state_is_only_written_with_trace_dir),
         ("Context compaction refreshes memory", check_context_compaction_refreshes_existing_memory_without_recursive_summary),
@@ -2136,19 +2399,27 @@ def main() -> int:
         ("Tool exception result", check_tool_exception_is_returned_as_tool_result),
     ]
 
-    failures: list[str] = []
-    outputs: list[str] = []
-    for name, func in checks:
-        ok, detail = func()
-        outputs.append(f"[{name}]\n{detail}")
-        if not ok:
-            failures.append(name)
+    previous_compact_trigger = os.environ.get("COMPACT_TRIGGER_TOKENS")
+    os.environ["COMPACT_TRIGGER_TOKENS"] = "8k"
+    try:
+        failures: list[str] = []
+        outputs: list[str] = []
+        for name, func in checks:
+            ok, detail = func()
+            outputs.append(f"[{name}]\n{detail}")
+            if not ok:
+                failures.append(name)
 
-    result = EdgeCaseResult(
-        status="PASS" if not failures else "FAIL",
-        detail="All edge-case checks passed." if not failures else f"Failed checks: {', '.join(failures)}",
-        output_preview=preview("\n\n".join(outputs)),
-    )
+        result = EdgeCaseResult(
+            status="PASS" if not failures else "FAIL",
+            detail="All edge-case checks passed." if not failures else f"Failed checks: {', '.join(failures)}",
+            output_preview=preview("\n\n".join(outputs)),
+        )
+    finally:
+        if previous_compact_trigger is None:
+            os.environ.pop("COMPACT_TRIGGER_TOKENS", None)
+        else:
+            os.environ["COMPACT_TRIGGER_TOKENS"] = previous_compact_trigger
     print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     return 0 if not failures else 1
 

@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any, Optional, Union
 from xml.etree import ElementTree
 
-from agent_base.tools.tool_file import ReadPDF
+from agent_base.tools.tool_file import DEFAULT_LOCAL_MAX_CHARS, ReadPDF
 from agent_base.tools.tooling import ToolBase, validate_tool_path
 
 
-DEFAULT_EDITOR_MAX_CHARS = 20000
+DEFAULT_EDITOR_MAX_CHARS = DEFAULT_LOCAL_MAX_CHARS
 BINARY_MARKDOWN_SUFFIXES = {".xlsx", ".pptx", ".wav", ".mp3", ".m4a", ".flac", ".pdf", ".docx"}
 
 

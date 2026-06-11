@@ -27,7 +27,7 @@ from agent_base.tools.tooling import (
 
 
 DEFAULT_BUFFER_LIMIT = 200000
-DEFAULT_OUTPUT_CHARS = 20000
+DEFAULT_OUTPUT_CHARS = 8192
 DEFAULT_YIELD_MS = 200
 REPEAT_COLLAPSE_THRESHOLD = 3
 
@@ -534,7 +534,7 @@ class TerminalWrite(ToolBase):
             },
             "max_output_chars": {
                 "type": "integer",
-                "description": "Maximum number of output characters to return. Default is 20000.",
+                "description": f"Maximum number of output characters to return. Default is {DEFAULT_OUTPUT_CHARS}.",
             },
         },
         "required": ["session_id", "input"],
@@ -596,7 +596,7 @@ class TerminalRead(ToolBase):
             },
             "max_output_chars": {
                 "type": "integer",
-                "description": "Maximum number of output characters to return. Default is 20000.",
+                "description": f"Maximum number of output characters to return. Default is {DEFAULT_OUTPUT_CHARS}.",
             },
         },
         "required": ["session_id"],
@@ -692,7 +692,7 @@ class TerminalInterrupt(ToolBase):
             },
             "max_output_chars": {
                 "type": "integer",
-                "description": "Maximum number of output characters to return after the interrupt. Default is 20000.",
+                "description": f"Maximum number of output characters to return after the interrupt. Default is {DEFAULT_OUTPUT_CHARS}.",
             },
         },
         "required": ["session_id"],

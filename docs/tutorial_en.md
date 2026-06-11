@@ -111,15 +111,17 @@ Optional variables:
 | `MAX_RUNTIME_SECONDS` | `10800` | Maximum wall-clock runtime for one agent run. |
 | `TIMEOUT_SECONDS` | `1200` | Timeout for each LLM API request. |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | Overall timeout for one WebFetch tool call. |
-| `WEBFETCH_MAX_CHARS` | `40960` | Hard maximum characters returned by one WebFetch call. |
-| `MAX_OUTPUT_TOKENS` | `40960` | Requested maximum output tokens. |
-| `MAX_INPUT_TOKENS` | `128000` | Input-token budget used by runtime accounting. |
-| `MAX_RETRIES` | `10` | Maximum retries for transient LLM API errors. |
+| `WEBFETCH_MAX_CHARS` | `8192` | Hard maximum characters returned by one WebFetch call. |
+| `MAX_OUTPUT_TOKENS` | `16384` | Requested maximum output tokens. |
+| `MAX_INPUT_TOKENS` | `131072` | Input-token budget used by runtime accounting. |
+| `RECENT_HISTORY_BUDGET_TOKENS` | `8192` | Raw recent-turn token budget retained after memory compaction. |
+| `COMPACT_SUMMARY_MAX_TOKENS` | `8192` | Maximum output tokens for memory-compaction summaries. |
+| `MAX_RETRIES` | `5` | Maximum retries for transient LLM API errors. |
 | `TEMPERATURE` | `0.6` | Main model temperature. |
 | `TOP_P` | `0.95` | Main model top-p. |
 | `PRESENCE_PENALTY` | `1.00` | Main model presence penalty when supported. |
 | `COMPACT_TRIGGER_TOKENS` | `96k` | Context length threshold for automatic compaction. |
-| `IMAGE_PART_TOKEN_ESTIMATE` | `1536` | Token estimate for each image content part. |
+| `IMAGE_PART_TOKEN_ESTIMATE` | `2048` | Token estimate for each image content part. |
 | `LLM_IMAGE_MAX_EDGE` | `1568` | Maximum image edge sent to multimodal models. |
 | `LLM_IMAGE_MAX_BYTES` | `524288` | Maximum compressed image payload size. |
 | `LLM_IMAGE_JPEG_QUALITY` | `85` | Initial JPEG quality for image compression. |
@@ -137,13 +139,14 @@ explicit Python/API/CLI arguments > process environment variables > .env > code 
 In Python import mode, `create_agent(...)` and `run_agent(...)` can override
 model/runtime settings for one agent instance, including `api_key`, `api_base`,
 `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
-`max_retries`, `temperature`, `top_p`, `presence_penalty`,
-`compact_trigger_tokens`, provider-specific `extra_body`, `max_rounds`, and
+`recent_history_budget_tokens`, `compact_summary_max_tokens`, `max_retries`,
+`temperature`, `top_p`, `presence_penalty`, `compact_trigger_tokens`,
+provider-specific `extra_body`, `max_rounds`, and
 `max_runtime_seconds`. Environment variables for these runtime settings use the
 upper-case form of the Python argument name, such as `MAX_ROUNDS`,
-`TIMEOUT_SECONDS`, `MAX_OUTPUT_TOKENS`, and `COMPACT_TRIGGER_TOKENS`. In CLI
-mode, model and sampling options stay compact and come from process environment
-variables or `.env`.
+`TIMEOUT_SECONDS`, `MAX_OUTPUT_TOKENS`, `RECENT_HISTORY_BUDGET_TOKENS`, and
+`COMPACT_TRIGGER_TOKENS`. In CLI mode, model and sampling options stay compact
+and come from process environment variables or `.env`.
 
 Provider-specific OpenAI-compatible fields use a single `extra_body` object.
 ResearchHarness validates that it is an object and forwards it unchanged to the
@@ -255,6 +258,8 @@ agent = create_agent(
     tools=[Read, Write, Bash, add_numbers],
     max_input_tokens=131072,
     max_output_tokens=4096,
+    recent_history_budget_tokens=8192,
+    compact_summary_max_tokens=8192,
     compact_trigger_tokens="96k",
     extra_body={"enable_thinking": False},
 )
@@ -270,8 +275,14 @@ or more files and appends them in order, matching the repeatable CLI
 `--role-prompt-file` behavior.
 
 Use `max_input_tokens` to match the model server context window,
-`max_output_tokens` to reserve response space, and `compact_trigger_tokens` to
-compact before the backend rejects an overlong request.
+`max_output_tokens` to reserve response space, `recent_history_budget_tokens` to
+retain raw recent turns after compaction, `compact_summary_max_tokens` to cap
+compaction-summary output, and `compact_trigger_tokens` to compact before the
+backend rejects an overlong request.
+If `compact_trigger_tokens` / `COMPACT_TRIGGER_TOKENS` is unset, the trigger is
+`MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS - COMPACT_SUMMARY_MAX_TOKENS`; invalid
+budgets raise an error instead of being silently adjusted. An explicit trigger
+must also be smaller than `MAX_INPUT_TOKENS - MAX_OUTPUT_TOKENS`.
 
 Use `tools=None` for the default tool set. Use `tools=[...]` as a complete
 explicit tool set; omitted built-ins are removed. In Python code, prefer

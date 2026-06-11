@@ -205,7 +205,7 @@ Arguments:
 - `glob`: optional string, file filter when scanning a directory, defaults to `**/*`
 - `case_sensitive`: optional boolean, defaults to `false`
 - `max_results`: optional integer, defaults to `100`
-- `max_chars`: optional integer, defaults to `20000`
+- `max_chars`: optional integer, defaults to `8192`
 
 Behavior:
 
@@ -237,7 +237,7 @@ Arguments:
 - `path`: string, file path
 - `start_line`: optional integer, 1-based start line
 - `end_line`: optional integer, 1-based end line
-- `max_chars`: optional integer, maximum returned characters, defaults to `20000`
+- `max_chars`: optional integer, maximum returned characters, defaults to `8192`
 
 Behavior:
 
@@ -266,7 +266,7 @@ Purpose:
 Arguments:
 
 - `path`: string, PDF path
-- `max_chars`: optional integer, maximum returned characters, defaults to `20000`
+- `max_chars`: optional integer, maximum returned characters, defaults to `8192`
 - `max_image_paths`: optional integer, maximum listed extracted image paths, defaults to `20`
 
 Behavior:
@@ -452,7 +452,7 @@ Arguments:
 - `url`: string, page URL
 - `start_line`: optional integer, 1-based start line, defaults to `1`
 - `end_line`: optional integer, 1-based end line
-- `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `40960`
+- `max_chars`: optional integer, maximum returned characters, defaults to and cannot exceed `WEBFETCH_MAX_CHARS` or `8192`
 
 Behavior:
 
@@ -508,7 +508,7 @@ Arguments:
 - `input`: string, text to send
 - `append_newline`: optional boolean, defaults to `true`
 - `yield_time_ms`: optional integer, defaults to `200`
-- `max_output_chars`: optional integer, defaults to `20000`
+- `max_output_chars`: optional integer, defaults to `8192`
 
 ## TerminalRead
 
@@ -520,7 +520,7 @@ Arguments:
 
 - `session_id`: string, session id
 - `yield_time_ms`: optional integer, defaults to `200`
-- `max_output_chars`: optional integer, defaults to `20000`
+- `max_output_chars`: optional integer, defaults to `8192`
 
 ## TerminalInterrupt
 
@@ -532,7 +532,7 @@ Purpose:
 Arguments:
 
 - `session_id`: string, session id
-- `max_output_chars`: optional integer, defaults to `20000`
+- `max_output_chars`: optional integer, defaults to `8192`
 
 ## TerminalKill
 

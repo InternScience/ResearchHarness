@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import shutil
 import sys
 import threading
@@ -32,6 +33,7 @@ class OpenAIAPICheckResult:
 
 def main() -> int:
     bootstrap()
+    os.environ["COMPACT_TRIGGER_TOKENS"] = "8k"
 
     import api.openai_server as openai_server
     from agent_base.react_agent import MultiTurnReactAgent
@@ -105,7 +107,7 @@ def main() -> int:
                 llm={
                     "model": "fake-vision-model",
                     "generate_cfg": {
-                        "max_input_tokens": 10000,
+                        "max_input_tokens": 32768,
                         "max_retries": 1,
                         "temperature": 0.0,
                         "top_p": 1.0,
@@ -195,7 +197,7 @@ def main() -> int:
             "api_key": "fake",
             "api_base": "http://fake.invalid/v1",
             "generate_cfg": {
-                "max_input_tokens": 10000,
+                "max_input_tokens": 32768,
                 "max_retries": 1,
                 "temperature": 0.0,
                 "top_p": 1.0,
