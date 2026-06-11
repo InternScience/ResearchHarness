@@ -431,7 +431,8 @@
     var body = eventBody(node);
     var toggle = node.querySelector(".event-toggle");
     if (!body) return;
-    var shouldCollapse = body.scrollHeight > COLLAPSED_STEP_HEIGHT + 8;
+    var shouldCollapse = !node.classList.contains("event-ask-user")
+      && body.scrollHeight > COLLAPSED_STEP_HEIGHT + 8;
     node.classList.toggle("can-collapse", shouldCollapse);
     if (toggle) toggle.hidden = !shouldCollapse;
     if (!shouldCollapse) {
@@ -651,7 +652,7 @@
     var context = message.context || "";
     var body = "<pre>" + escapeHtml(question) + "</pre>";
     if (context) body += '<pre class="muted-text">' + escapeHtml(context) + "</pre>";
-    addEvent("runtime", "Agent question", body, ["AskUser"]);
+    addEvent("ask-user", "Agent question", body, ["AskUser"]);
     setStatus("Waiting for input", "running");
     updateComposerMode();
     promptInput.focus();
