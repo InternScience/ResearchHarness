@@ -1,5 +1,6 @@
 # Local agent artifacts
 AGENTS.md
+AGENTS.local/
 workspace/*
 !workspace/.gitkeep
 api_runs/*
