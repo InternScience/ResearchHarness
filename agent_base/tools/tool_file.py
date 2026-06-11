@@ -29,7 +29,7 @@ DEFAULT_LLM_IMAGE_MAX_BYTES = 512 * 1024
 DEFAULT_LLM_IMAGE_JPEG_QUALITY = 85
 MIN_LLM_IMAGE_JPEG_QUALITY = 45
 MIN_LLM_IMAGE_EDGE = 256
-DEFAULT_LOCAL_MAX_CHARS = 8192
+DEFAULT_LOCAL_MAX_CHARS = 16384
 DEFAULT_GLOB_MAX_RESULTS = 200
 DEFAULT_GREP_MAX_RESULTS = 100
 DEFAULT_GREP_MAX_CHARS = DEFAULT_LOCAL_MAX_CHARS
@@ -87,7 +87,7 @@ class Read(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 8192.",
+                "description": "Maximum number of characters to return. Default is 16384.",
             },
         },
         "required": ["path"],
@@ -173,7 +173,7 @@ class ReadPDF(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 8192.",
+                "description": "Maximum number of characters to return. Default is 16384.",
             },
             "max_image_paths": {
                 "type": "integer",
@@ -557,7 +557,7 @@ class Grep(ToolBase):
             },
             "max_chars": {
                 "type": "integer",
-                "description": "Maximum number of characters to return. Default is 8192.",
+                "description": "Maximum number of characters to return. Default is 16384.",
             },
         },
         "required": ["pattern"],

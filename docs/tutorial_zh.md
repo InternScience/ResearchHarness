@@ -108,7 +108,7 @@ pip install -e . --no-deps
 | `MAX_RUNTIME_SECONDS` | `10800` | 单次 agent run 的最大运行秒数。 |
 | `TIMEOUT_SECONDS` | `1200` | 单次 LLM API 请求超时时间。 |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | 单次 WebFetch 工具调用的总超时时间。 |
-| `WEBFETCH_MAX_CHARS` | `8192` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
+| `WEBFETCH_MAX_CHARS` | `16384` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
 | `MAX_OUTPUT_TOKENS` | `16384` | 请求模型输出的最大 token 数。 |
 | `MAX_INPUT_TOKENS` | `131072` | runtime token accounting 使用的输入 token 预算。 |
 | `RECENT_HISTORY_BUDGET_TOKENS` | `8192` | 上下文压缩后保留的原始最近轮次 token 预算。 |

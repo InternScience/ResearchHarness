@@ -111,7 +111,7 @@ Optional variables:
 | `MAX_RUNTIME_SECONDS` | `10800` | Maximum wall-clock runtime for one agent run. |
 | `TIMEOUT_SECONDS` | `1200` | Timeout for each LLM API request. |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | Overall timeout for one WebFetch tool call. |
-| `WEBFETCH_MAX_CHARS` | `8192` | Hard maximum characters returned by one WebFetch call. |
+| `WEBFETCH_MAX_CHARS` | `16384` | Hard maximum characters returned by one WebFetch call. |
 | `MAX_OUTPUT_TOKENS` | `16384` | Requested maximum output tokens. |
 | `MAX_INPUT_TOKENS` | `131072` | Input-token budget used by runtime accounting. |
 | `RECENT_HISTORY_BUDGET_TOKENS` | `8192` | Raw recent-turn token budget retained after memory compaction. |
