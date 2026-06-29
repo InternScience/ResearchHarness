@@ -111,6 +111,7 @@ Optional variables:
 | `MAX_RUNTIME_SECONDS` | `10800` | Maximum wall-clock runtime for one agent run. |
 | `TIMEOUT_SECONDS` | `1200` | Timeout for each LLM API request. |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | Overall timeout for one WebFetch tool call. |
+| `READPDF_TIMEOUT_SECONDS` | `300` | Overall timeout for one ReadPDF tool call. |
 | `WEBFETCH_MAX_CHARS` | `16384` | Hard maximum characters returned by one WebFetch call. |
 | `MAX_OUTPUT_TOKENS` | `16384` | Requested maximum output tokens. |
 | `MAX_INPUT_TOKENS` | `131072` | Input-token budget used by runtime accounting. |
@@ -153,6 +154,10 @@ ResearchHarness validates that it is an object and forwards it unchanged to the
 underlying OpenAI SDK request. It does not interpret provider-specific keys.
 Thinking / reasoning provider modes can consume extra output budget, so raise
 `MAX_OUTPUT_TOKENS` or `max_output_tokens` when enabling them.
+
+`READPDF_TIMEOUT_SECONDS` is a tool-level guard. A timed-out PDF parse returns
+a readable `ReadPDF` tool result so the agent can retry, inspect the file another
+way, or continue with other evidence.
 
 | Mode | How to pass provider-specific `extra_body` |
 | --- | --- |

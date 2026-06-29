@@ -108,6 +108,7 @@ pip install -e . --no-deps
 | `MAX_RUNTIME_SECONDS` | `10800` | 单次 agent run 的最大运行秒数。 |
 | `TIMEOUT_SECONDS` | `1200` | 单次 LLM API 请求超时时间。 |
 | `WEBFETCH_TIMEOUT_SECONDS` | `300` | 单次 WebFetch 工具调用的总超时时间。 |
+| `READPDF_TIMEOUT_SECONDS` | `300` | 单次 ReadPDF 工具调用的总超时时间。 |
 | `WEBFETCH_MAX_CHARS` | `16384` | 单次 WebFetch 调用允许返回的硬上限字符数。 |
 | `MAX_OUTPUT_TOKENS` | `16384` | 请求模型输出的最大 token 数。 |
 | `MAX_INPUT_TOKENS` | `131072` | runtime token accounting 使用的输入 token 预算。 |
@@ -148,6 +149,9 @@ ResearchHarness 只校验它是 object，并原样转发给底层 OpenAI SDK req
 不会解释 provider-specific key，也不会写死某个 provider 的字段。
 如果启用 provider 的 thinking / reasoning 类模式，需要为输出预留更多
 token 预算，例如调高 `MAX_OUTPUT_TOKENS` 或 `max_output_tokens`。
+
+`READPDF_TIMEOUT_SECONDS` 是工具级保护。PDF 解析超时时，`ReadPDF` 会返回
+可读的工具结果，让 agent 自己决定重试、改用其他方式检查文件，或继续使用其他证据。
 
 | 模式 | 如何传 provider-specific `extra_body` |
 | --- | --- |

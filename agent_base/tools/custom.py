@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import time
 from collections.abc import Callable, Sequence as AbcSequence
 from types import UnionType
 from typing import Any, Literal, Sequence, Union, get_args, get_origin, get_type_hints
@@ -18,9 +19,17 @@ CONTEXT_PARAMETER_NAMES = frozenset({"workspace_root", "runtime_deadline", "mode
 class FunctionTool(ToolBase):
     """ToolBase adapter for a validated Python function."""
 
-    def __init__(self, func: Callable[..., Any], *, name: str | None = None, description: str | None = None):
+    def __init__(
+        self,
+        func: Callable[..., Any],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        timeout_seconds: float | int | None = None,
+    ):
         self.func = func
         self._context_parameters: set[str] = set()
+        self.timeout_seconds = _validate_timeout_seconds(timeout_seconds)
         self.name = _resolve_tool_name(func, name)
         self.description = _resolve_tool_description(func, description)
         self.parameters = _schema_from_signature(func, self._context_parameters)
@@ -29,9 +38,15 @@ class FunctionTool(ToolBase):
     def call(self, params: str | dict[str, Any], **kwargs: Any) -> Any:
         parsed = self.parse_json_args(params)
         call_kwargs = dict(parsed)
+        runtime_deadline = kwargs.get("runtime_deadline")
+        if self.timeout_seconds is not None:
+            tool_deadline = time.time() + self.timeout_seconds
+            runtime_deadline = min(float(runtime_deadline), tool_deadline) if runtime_deadline is not None else tool_deadline
+            if runtime_deadline <= time.time():
+                return f"[{self.name}] Timeout before tool execution could start."
         for name in self._context_parameters:
             if name in kwargs:
-                call_kwargs[name] = kwargs[name]
+                call_kwargs[name] = runtime_deadline if name == "runtime_deadline" else kwargs[name]
         return self.func(**call_kwargs)
 
 
@@ -40,6 +55,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    timeout_seconds: float | int | None = None,
 ) -> Callable[..., Any]:
     """Mark a Python function as a ResearchHarness custom tool.
 
@@ -50,7 +66,12 @@ def tool(
     def decorate(inner: Callable[..., Any]) -> Callable[..., Any]:
         if not callable(inner):
             raise TypeError("@tool can only decorate a callable.")
-        setattr(inner, "__researchharness_tool__", {"name": name, "description": description})
+        validated_timeout = _validate_timeout_seconds(timeout_seconds)
+        setattr(
+            inner,
+            "__researchharness_tool__",
+            {"name": name, "description": description, "timeout_seconds": validated_timeout},
+        )
         return inner
 
     if func is None:
@@ -83,8 +104,21 @@ def _coerce_custom_tool(item: Any) -> ToolBase:
             item,
             name=metadata.get("name"),
             description=metadata.get("description"),
+            timeout_seconds=metadata.get("timeout_seconds"),
         )
     raise ValueError(f"Custom tool must be a decorated function or ToolBase instance, got {type(item).__name__}.")
+
+
+def _validate_timeout_seconds(timeout_seconds: float | int | None) -> float | None:
+    if timeout_seconds is None:
+        return None
+    try:
+        timeout = float(timeout_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Custom tool timeout_seconds must be a positive number.") from exc
+    if timeout <= 0:
+        raise ValueError("Custom tool timeout_seconds must be > 0.")
+    return timeout
 
 
 def _resolve_tool_name(func: Callable[..., Any], override: str | None) -> str:

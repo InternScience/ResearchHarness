@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +45,22 @@ def main() -> int:
         path.write_text("marked", encoding="utf-8")
         return path.relative_to(workspace_root).as_posix()
 
+    @tool(timeout_seconds=5)
+    def deadline_probe(*, runtime_deadline) -> float:
+        """Return remaining runtime seconds after custom tool timeout clipping."""
+
+        return runtime_deadline - time.time()
+
+    invalid_timeout_error = ""
+    try:
+        @tool(timeout_seconds=0)
+        def invalid_timeout_tool(value: str) -> str:
+            """Invalid timeout tool."""
+
+            return value
+    except Exception as exc:
+        invalid_timeout_error = str(exc)
+
     explicit_agent = create_agent(
         model_name="fake-model",
         api_key="fake-key",
@@ -64,7 +81,7 @@ def main() -> int:
         workspace_root=str(case_dir / "agent_workspace"),
         role_prompt="Inline role prompt.",
         role_prompt_files=str(role_file),
-        tools=[Read, add_numbers, mark_workspace],
+        tools=[Read, add_numbers, mark_workspace, deadline_probe],
         require_env=False,
     )
     add_result = explicit_agent.custom_call_tool("add_numbers", {"a": 2, "b": 3})
@@ -73,6 +90,8 @@ def main() -> int:
         {"filename": "marker.txt"},
         workspace_root=explicit_agent.workspace_root,
     )
+    deadline_result = explicit_agent.custom_call_tool("deadline_probe", {}, runtime_deadline=time.time() + 60)
+    expired_deadline_result = explicit_agent.custom_call_tool("deadline_probe", {}, runtime_deadline=time.time() - 1)
     standalone_schema_names = [
         schema["function"]["name"] for schema in available_tool_schemas([Read, Bash, add_numbers])
     ]
@@ -95,6 +114,8 @@ def main() -> int:
         return value
 
     errors: dict[str, str] = {}
+    if invalid_timeout_error:
+        errors["invalid_tool_timeout"] = invalid_timeout_error
     for name, factory in {
         "conflict": lambda: create_agent(model_name="fake-model", tools=[conflicting_tool], require_env=False),
         "undecorated": lambda: create_agent(model_name="fake-model", tools=[undecorated_tool], require_env=False),
@@ -169,6 +190,8 @@ def main() -> int:
         "workspace_root": str(explicit_agent.workspace_root),
         "add_result": add_result,
         "marker_result": marker_result,
+        "deadline_result": deadline_result,
+        "expired_deadline_result": expired_deadline_result,
         "standalone_schema_names": standalone_schema_names,
         "explicit_schema_names": explicit_schema_names,
         "default_has_read": "Read" in default_agent.tool_names,
@@ -183,7 +206,7 @@ def main() -> int:
     }
 
     ok = (
-        explicit_agent.tool_names == ["Read", "add_numbers", "mark_workspace"]
+        explicit_agent.tool_names == ["Read", "add_numbers", "mark_workspace", "deadline_probe"]
         and details["llm"]["api_key"] == "fake-key"
         and details["llm"]["api_base"] == "http://fake.local/v1"
         and details["llm"]["timeout_seconds"] == 12.5
@@ -204,9 +227,12 @@ def main() -> int:
         and explicit_agent.workspace_root == (case_dir / "agent_workspace").resolve()
         and add_result == 5
         and marker_result == "marker.txt"
+        and isinstance(deadline_result, float)
+        and 0 < deadline_result <= 5
+        and "[deadline_probe] Timeout before tool execution could start." in expired_deadline_result
         and (case_dir / "agent_workspace" / "marker.txt").read_text(encoding="utf-8") == "marked"
         and standalone_schema_names == ["Read", "Bash", "add_numbers"]
-        and explicit_schema_names == ["Read", "add_numbers", "mark_workspace"]
+        and explicit_schema_names == ["Read", "add_numbers", "mark_workspace", "deadline_probe"]
         and details["default_has_read"]
         and details["default_has_ask_user"]
         and no_tool_agent.tool_names == []
@@ -216,6 +242,7 @@ def main() -> int:
         and "duplicate_rejected" in errors
         and "invalid_extra_body" in errors
         and "mixed_tools_extra" in errors
+        and "invalid_tool_timeout" in errors
         and "configured_tool_class" in errors
         and "schema_helper_validates_custom_tools" in errors
         and image_run_result["workspace_root"] == str((case_dir / "run_workspace").resolve())

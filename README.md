@@ -86,6 +86,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-06-29) `ReadPDF` now has a `READPDF_TIMEOUT_SECONDS` guard that returns a normal tool result on parser timeout, and custom Python `@tool(...)` functions can declare cooperative `timeout_seconds`.
+
 🚩 **Update** (2026-06-11) Context-compaction token budgets are now explicit and validated: `RECENT_HISTORY_BUDGET_TOKENS` and `COMPACT_SUMMARY_MAX_TOKENS` are configurable, and invalid token budgets raise errors instead of being silently adjusted.
 
 🚩 **Update** (2026-06-06) Provider-specific OpenAI-compatible request options can now be passed consistently across Python import mode, CLI, and API server mode through a validated `extra_body` object.
@@ -96,10 +98,10 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-05-22) CLI and API deployments can now expose an explicit complete tool set with repeatable `--tool NAME`, useful when a run needs a smaller or benchmark-specific tool surface.
 
-🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
-
 <details>
 <summary>👉 More News (Click to expand)</summary>
+
+🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
 
 🚩 **Update** (2026-05-21) The Python import API now exposes the same core runtime controls as CLI mode: default workspace, role prompt strings/files, image inputs, explicit tool sets, optional extra tools, and decorated custom function tools.
 
@@ -353,6 +355,7 @@ Optional variables:
 - `MAX_RUNTIME_SECONDS`
 - `TIMEOUT_SECONDS`
 - `WEBFETCH_TIMEOUT_SECONDS`
+- `READPDF_TIMEOUT_SECONDS`
 - `WEBFETCH_MAX_CHARS`
 - `MAX_OUTPUT_TOKENS`
 - `MAX_INPUT_TOKENS`
@@ -416,6 +419,9 @@ Details:
   overwritten by `.env`.
 - `.env` fills missing environment variables only; it is a convenient local
   default file, not a higher-priority override layer.
+- `READPDF_TIMEOUT_SECONDS` is a tool-level guard for one `ReadPDF` call. If
+  PDF parsing times out, the tool returns a readable timeout result to the
+  agent instead of terminating the whole session.
 - `--trace-dir` has no environment-variable equivalent. Trace/session state is
   written only when this argument is supplied in direct CLI runs. Prefer a trace
   directory outside the agent-visible workspace; do not point `--trace-dir` at

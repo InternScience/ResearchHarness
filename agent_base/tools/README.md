@@ -153,7 +153,12 @@ def add_numbers(a: int, b: int) -> int:
     """Add two integers."""
     return a + b
 
-agent = create_agent(tools=[Read, Write, add_numbers])
+@tool(timeout_seconds=30)
+def inspect_workspace(*, workspace_root, runtime_deadline) -> str:
+    """Inspect the current workspace with a cooperative runtime deadline."""
+    return f"{workspace_root} deadline={runtime_deadline}"
+
+agent = create_agent(tools=[Read, Write, add_numbers, inspect_workspace])
 ```
 
 Validation happens at agent initialization. A custom function must have:
@@ -167,6 +172,11 @@ Validation happens at agent initialization. A custom function must have:
 The context parameters `workspace_root`, `runtime_deadline`, and `model_name`
 can be accepted as keyword-only parameters. They are supplied by the runtime and
 are not exposed to the model schema.
+
+`@tool(timeout_seconds=...)` narrows the `runtime_deadline` passed to a custom
+tool and prevents execution when the deadline is already exhausted. It is a
+cooperative timeout contract for Python functions; arbitrary in-process Python
+code cannot be safely force-killed by the decorator.
 
 ## Glob
 
@@ -275,6 +285,7 @@ Behavior:
 - Uses the returned `text` and `img_paths`.
 - Depends on `MINERU_TOKEN`.
 - If [`structai`](https://github.com/black-yt/structai) is missing, returns a clear dependency error instead of breaking unrelated file tools.
+- `READPDF_TIMEOUT_SECONDS` limits one PDF parse. On timeout, `ReadPDF` returns a readable tool result instead of terminating the agent session.
 - For PDF figure tasks, prefer `ReadPDF` first to discover extracted text and extracted image paths, then use `ReadImage` on the actual extracted image file.
 
 Returns:

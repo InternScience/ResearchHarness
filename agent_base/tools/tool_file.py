@@ -1,9 +1,12 @@
 import argparse
 import base64
 import io
+import json
 import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -33,6 +36,69 @@ DEFAULT_LOCAL_MAX_CHARS = 16384
 DEFAULT_GLOB_MAX_RESULTS = 200
 DEFAULT_GREP_MAX_RESULTS = 100
 DEFAULT_GREP_MAX_CHARS = DEFAULT_LOCAL_MAX_CHARS
+DEFAULT_READPDF_TIMEOUT_SECONDS = 300
+READPDF_SUBPROCESS_MARKER = "__RESEARCHHARNESS_READPDF_RESULT__"
+
+
+def readpdf_timeout_seconds() -> float:
+    timeout = float(os.getenv("READPDF_TIMEOUT_SECONDS", str(DEFAULT_READPDF_TIMEOUT_SECONDS)))
+    if timeout <= 0:
+        raise ValueError("READPDF_TIMEOUT_SECONDS must be > 0.")
+    return timeout
+
+
+def _remaining_runtime_seconds(runtime_deadline: Optional[float]) -> Optional[float]:
+    if runtime_deadline is None:
+        return None
+    return runtime_deadline - time.time()
+
+
+def _read_pdf_with_structai_subprocess(path: Path, *, timeout_seconds: float) -> Any:
+    script = f"""
+import json
+import sys
+
+MARKER = {READPDF_SUBPROCESS_MARKER!r}
+
+try:
+    from structai import read_pdf
+    result = read_pdf(sys.argv[1])
+    payload = {{"ok": True, "result": result}}
+except Exception as exc:
+    payload = {{"ok": False, "error_type": type(exc).__name__, "error": str(exc)}}
+
+print(MARKER + json.dumps(payload, ensure_ascii=False, default=str))
+sys.exit(0 if payload.get("ok") else 1)
+"""
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", script, str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError(f"PDF parsing exceeded {timeout_seconds:.1f}s") from exc
+
+    payload_line = ""
+    for line in completed.stdout.splitlines():
+        if line.startswith(READPDF_SUBPROCESS_MARKER):
+            payload_line = line[len(READPDF_SUBPROCESS_MARKER):]
+    if not payload_line:
+        stderr_preview = completed.stderr.strip()[:1000]
+        stdout_preview = completed.stdout.strip()[:1000]
+        detail = stderr_preview or stdout_preview or f"subprocess exit code {completed.returncode}"
+        raise RuntimeError(f"PDF parser did not return a structured result: {detail}")
+
+    payload = json.loads(payload_line)
+    if not payload.get("ok"):
+        error_type = payload.get("error_type", "Error")
+        error = payload.get("error", "")
+        raise RuntimeError(f"{error_type}: {error}")
+    return payload.get("result")
 
 
 def resolve_file_path(path_value: str, *, base_root: Optional[Path] = None) -> Path:
@@ -192,6 +258,7 @@ class ReadPDF(ToolBase):
         except ValueError as exc:
             return f"[ReadPDF] {exc}"
         base_root = kwargs.get("workspace_root")
+        runtime_deadline = kwargs.get("runtime_deadline")
 
         try:
             max_chars = int(params.get("max_chars", DEFAULT_LOCAL_MAX_CHARS))
@@ -215,12 +282,22 @@ class ReadPDF(ToolBase):
             return "[ReadPDF] max_image_paths must be > 0."
 
         try:
-            from structai import read_pdf as structai_read_pdf
+            import structai  # noqa: F401
         except ImportError:
             return "[ReadPDF] Missing required dependency: structai. Install requirements and configure MINERU_TOKEN to enable PDF reading."
+        try:
+            timeout_seconds = readpdf_timeout_seconds()
+        except ValueError as exc:
+            return f"[ReadPDF] {exc}"
+
+        remaining = _remaining_runtime_seconds(runtime_deadline)
+        if remaining is not None:
+            if remaining <= 0:
+                return "[ReadPDF] Timeout before PDF parsing could start: agent runtime limit was already reached."
+            timeout_seconds = min(timeout_seconds, max(remaining, 0.001))
 
         try:
-            result = structai_read_pdf(str(path))
+            result = _read_pdf_with_structai_subprocess(path, timeout_seconds=timeout_seconds)
             if isinstance(result, list):
                 result = result[0] if result else None
             if not isinstance(result, dict):
@@ -233,7 +310,14 @@ class ReadPDF(ToolBase):
                 raise ValueError("PDF img_paths must be a list when present")
             if not text.strip() and not raw_img_paths:
                 raise ValueError("PDF text is empty and no extracted images were found")
+        except TimeoutError:
+            return (
+                f"[ReadPDF] Timeout after {timeout_seconds:.1f}s while parsing PDF: {path}. "
+                "The PDF parser may be waiting on an external service. Try again later, inspect file metadata with Bash/file, or continue with other available evidence."
+            )
         except (OSError, ValueError, TypeError) as exc:
+            return f"[ReadPDF] Error reading PDF: {exc}"
+        except RuntimeError as exc:
             return f"[ReadPDF] Error reading PDF: {exc}"
 
         resolved_img_paths: list[str] = []

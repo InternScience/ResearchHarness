@@ -88,6 +88,7 @@ def check_readpdf_relative_image_path() -> tuple[bool, str]:
     from agent_base.tools.tool_file import ReadPDF
 
     case_dir = TMP_DIR / "readpdf_relative_image"
+    shutil.rmtree(case_dir, ignore_errors=True)
     case_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = case_dir / "dummy.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%dummy\n")
@@ -96,13 +97,29 @@ def check_readpdf_relative_image_path() -> tuple[bool, str]:
     image_path = image_dir / "figure1.png"
     Image.new("RGB", (8, 8), color="white").save(image_path)
 
-    fake_structai = types.ModuleType("structai")
-    fake_structai.read_pdf = lambda _: {"text": "", "img_paths": ["fake_extracted/figure1.png"]}
+    fake_root = case_dir / "fake_modules"
+    fake_root.mkdir(parents=True, exist_ok=True)
+    (fake_root / "structai.py").write_text(
+        "def read_pdf(path):\n"
+        "    return {'text': '', 'img_paths': ['fake_extracted/figure1.png']}\n",
+        encoding="utf-8",
+    )
     previous_structai = sys.modules.get("structai")
-    sys.modules["structai"] = fake_structai
+    previous_pythonpath = os.environ.get("PYTHONPATH")
+    sys.modules.pop("structai", None)
+    sys.path.insert(0, str(fake_root))
+    os.environ["PYTHONPATH"] = (
+        str(fake_root) if not previous_pythonpath else str(fake_root) + os.pathsep + previous_pythonpath
+    )
     try:
         result = ReadPDF().call({"path": str(pdf_path)}, workspace_root=case_dir)
     finally:
+        if str(fake_root) in sys.path:
+            sys.path.remove(str(fake_root))
+        if previous_pythonpath is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = previous_pythonpath
         if previous_structai is None:
             sys.modules.pop("structai", None)
         else:
@@ -115,6 +132,63 @@ def check_readpdf_relative_image_path() -> tuple[bool, str]:
         and str(image_path.resolve()) in result
     )
     return ok, str(result)
+
+
+def check_readpdf_timeout_returns_tool_result() -> tuple[bool, str]:
+    from agent_base.tools.tool_file import ReadPDF
+
+    case_dir = TMP_DIR / "readpdf_timeout"
+    shutil.rmtree(case_dir, ignore_errors=True)
+    case_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = case_dir / "slow.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%slow\n")
+    fake_root = case_dir / "fake_modules"
+    fake_root.mkdir(parents=True, exist_ok=True)
+    (fake_root / "structai.py").write_text(
+        "import time\n"
+        "def read_pdf(path):\n"
+        "    time.sleep(5)\n"
+        "    return {'text': 'too late', 'img_paths': []}\n",
+        encoding="utf-8",
+    )
+
+    previous_structai = sys.modules.get("structai")
+    previous_pythonpath = os.environ.get("PYTHONPATH")
+    previous_timeout = os.environ.get("READPDF_TIMEOUT_SECONDS")
+    sys.modules.pop("structai", None)
+    sys.path.insert(0, str(fake_root))
+    os.environ["PYTHONPATH"] = (
+        str(fake_root) if not previous_pythonpath else str(fake_root) + os.pathsep + previous_pythonpath
+    )
+    os.environ["READPDF_TIMEOUT_SECONDS"] = "0.2"
+    started_at = time.time()
+    try:
+        result = ReadPDF().call({"path": str(pdf_path)}, workspace_root=case_dir)
+    finally:
+        if str(fake_root) in sys.path:
+            sys.path.remove(str(fake_root))
+        if previous_pythonpath is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = previous_pythonpath
+        if previous_timeout is None:
+            os.environ.pop("READPDF_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["READPDF_TIMEOUT_SECONDS"] = previous_timeout
+        if previous_structai is None:
+            sys.modules.pop("structai", None)
+        else:
+            sys.modules["structai"] = previous_structai
+    elapsed = time.time() - started_at
+
+    ok = (
+        isinstance(result, str)
+        and result.startswith("[ReadPDF] Timeout after")
+        and "while parsing PDF" in result
+        and "slow.pdf" in result
+        and elapsed < 4.0
+    )
+    return ok, json.dumps({"elapsed_seconds": elapsed, "result": result}, ensure_ascii=False, indent=2)
 
 
 def check_terminal_interrupt_preserves_remainder() -> tuple[bool, str]:
@@ -2368,6 +2442,7 @@ def main() -> int:
         ("Workspace root auto-create", check_workspace_root_is_created_when_missing),
         ("Required env enforced", check_required_env_is_enforced),
         ("ReadPDF relative image path", check_readpdf_relative_image_path),
+        ("ReadPDF timeout result", check_readpdf_timeout_returns_tool_result),
         ("TerminalInterrupt remainder", check_terminal_interrupt_preserves_remainder),
         ("Agent runtime limit", check_agent_runtime_limit_on_tool_execution),
         ("LLM hard timeout", check_llm_hard_timeout_interrupts_blocking_call),
