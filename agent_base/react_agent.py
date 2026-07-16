@@ -16,7 +16,7 @@ from agent_base.base import BaseAgent
 from agent_base.console_utils import ConsoleEventPrinter
 from agent_base.context_compact import compact_messages, should_compact_messages
 from agent_base.model_profiles import resolve_model_profile
-from agent_base.provider_compat import apply_sampling_params
+from agent_base.provider_compat import apply_sampling_params, normalize_omit_generate_params
 from agent_base.prompt import composed_system_prompt
 from agent_base.session_state import AgentSessionState, CompactionRecord, persist_session_state, resolve_session_state_path
 from agent_base.trace_utils import FlatTraceWriter
@@ -632,10 +632,17 @@ def image_context_trace_text(result: Any) -> str:
     return text
 
 
-def default_llm_config(model_name: Optional[str] = None, extra_body: Optional[dict[str, Any]] = None) -> dict:
+def default_llm_config(
+    model_name: Optional[str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
+    omit_generate_params: Optional[str | Sequence[str]] = None,
+) -> dict:
     selected_model = str(model_name or "").strip() or default_model_name()
     if extra_body is not None and not isinstance(extra_body, dict):
         raise ValueError("extra_body must be a dict.")
+    resolved_omit_generate_params = normalize_omit_generate_params(
+        omit_generate_params if omit_generate_params is not None else os.environ.get("OMIT_GENERATE_PARAMS")
+    )
     config = {
         "model": selected_model,
         "api_key": os.environ.get("API_KEY", "EMPTY"),
@@ -656,6 +663,8 @@ def default_llm_config(model_name: Optional[str] = None, extra_body: Optional[di
             "presence_penalty": float(os.environ.get("PRESENCE_PENALTY", str(DEFAULT_PRESENCE_PENALTY))),
         },
     }
+    if resolved_omit_generate_params:
+        config["generate_cfg"]["omit_generate_params"] = resolved_omit_generate_params
     if extra_body:
         config["extra_body"] = dict(extra_body)
     return config
@@ -751,7 +760,14 @@ class MultiTurnReactAgent(BaseAgent):
         self.tool_map = {tool_name: tool_registry[tool_name] for tool_name in requested_tools}
         self.tool_names = list(self.tool_map.keys())
         self.model = str(llm["model"])
-        self.llm_generate_cfg = llm["generate_cfg"]
+        self.llm_generate_cfg = dict(llm["generate_cfg"])
+        resolved_omit_generate_params = normalize_omit_generate_params(
+            self.llm_generate_cfg.get("omit_generate_params")
+        )
+        if resolved_omit_generate_params:
+            self.llm_generate_cfg["omit_generate_params"] = resolved_omit_generate_params
+        else:
+            self.llm_generate_cfg.pop("omit_generate_params", None)
         self.trace_dir = Path(trace_dir) if trace_dir else None
         self.trace_path: Optional[Path] = None
         self.session_state_path: Optional[Path] = None
@@ -837,6 +853,7 @@ class MultiTurnReactAgent(BaseAgent):
                         if presence_penalty is not None
                         else self.llm_generate_cfg.get("presence_penalty", 1.1)
                     ),
+                    omit_generate_params=self.llm_generate_cfg.get("omit_generate_params"),
                 )
                 if self.llm_extra_body:
                     request_kwargs["extra_body"] = dict(self.llm_extra_body)
@@ -1578,6 +1595,17 @@ def _parse_cli_args(
         metavar="JSON",
         help="Provider-specific OpenAI-compatible request extra_body JSON object.",
     )
+    parser.add_argument(
+        "--omit-generate-param",
+        action="append",
+        default=[],
+        dest="omit_generate_params",
+        metavar="NAME",
+        help=(
+            "Do not send one default sampling parameter to the provider. "
+            "Allowed: temperature, top_p, presence_penalty. May be passed multiple times."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.tool_names and args.extra_tools:
         raise ValueError("--tool defines the complete tool set and cannot be combined with --extra-tool.")
@@ -1590,6 +1618,9 @@ def _parse_cli_args(
         if not isinstance(parsed_extra_body, dict):
             raise ValueError("--llm-extra-body-json must be a JSON object.")
         llm_extra_body = parsed_extra_body
+    omit_generate_params = (
+        normalize_omit_generate_params(args.omit_generate_params) if args.omit_generate_params else None
+    )
 
     prompt_text = ""
     if args.prompt_file:
@@ -1611,6 +1642,7 @@ def _parse_cli_args(
         validate_named_tools(args.tool_names) if args.tool_names else [],
         resolve_extra_tool_names(args.extra_tools),
         llm_extra_body,
+        omit_generate_params,
     )
 
 
@@ -1629,6 +1661,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tool_names,
             extra_tools,
             llm_extra_body,
+            omit_generate_params,
         ) = _parse_cli_args(argv or sys.argv[1:])
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         forbidden_tools = set(getattr(agent_cls, "forbidden_tool_names", set()))
@@ -1644,7 +1677,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if extra_tools
                 else None
             ),
-            llm=default_llm_config(extra_body=llm_extra_body),
+            llm=default_llm_config(extra_body=llm_extra_body, omit_generate_params=omit_generate_params),
             trace_dir=trace_dir,
             role_prompt=role_prompt or None,
         )

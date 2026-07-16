@@ -141,7 +141,8 @@ In Python import mode, `create_agent(...)` and `run_agent(...)` can override
 model/runtime settings for one agent instance, including `api_key`, `api_base`,
 `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
 `recent_history_budget_tokens`, `compact_summary_max_tokens`, `max_retries`,
-`temperature`, `top_p`, `presence_penalty`, `compact_trigger_tokens`,
+`temperature`, `top_p`, `presence_penalty`, `omit_generate_params`,
+`compact_trigger_tokens`,
 provider-specific `extra_body`, `max_rounds`, and
 `max_runtime_seconds`. Environment variables for these runtime settings use the
 upper-case form of the Python argument name, such as `MAX_ROUNDS`,
@@ -158,6 +159,39 @@ Thinking / reasoning provider modes can consume extra output budget, so raise
 `READPDF_TIMEOUT_SECONDS` is a tool-level guard. A timed-out PDF parse returns
 a readable `ReadPDF` tool result so the agent can retry, inspect the file another
 way, or continue with other evidence.
+
+If an OpenAI-compatible provider rejects a sampling parameter for a specific
+model, omit the field itself instead of setting it to `0`. ResearchHarness can
+omit `temperature`, `top_p`, and `presence_penalty`:
+
+| Mode | How to omit a sampling parameter |
+| --- | --- |
+| Environment / `.env` | `OMIT_GENERATE_PARAMS="presence_penalty"` |
+| Python import | `create_agent(..., omit_generate_params=["presence_penalty"])` |
+| CLI | `--omit-generate-param presence_penalty` |
+| API server | OpenAI SDK `extra_body={"omit-generate-params": ["presence_penalty"]}` |
+
+Examples:
+
+```bash
+OMIT_GENERATE_PARAMS="presence_penalty" python3 run_agent.py "Return a one-sentence answer."
+
+python3 run_agent.py \
+  --omit-generate-param presence_penalty \
+  "Return a one-sentence answer."
+```
+
+```python
+from researchharness import create_agent
+
+agent = create_agent(
+    model_name="your-model",
+    api_key="your-key",
+    api_base="https://your-openai-compatible-endpoint/v1",
+    omit_generate_params=["presence_penalty"],
+    require_env=False,
+)
+```
 
 | Mode | How to pass provider-specific `extra_body` |
 | --- | --- |

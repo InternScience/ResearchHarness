@@ -138,7 +138,7 @@ pip install -e . --no-deps
 agent 实例覆盖模型和运行时设置，包括 `api_key`、`api_base`、`model_name`、
 `timeout_seconds`、`max_input_tokens`、`max_output_tokens`、
 `recent_history_budget_tokens`、`compact_summary_max_tokens`、`max_retries`、
-`temperature`、`top_p`、`presence_penalty`、`compact_trigger_tokens`、
+`temperature`、`top_p`、`presence_penalty`、`omit_generate_params`、`compact_trigger_tokens`、
 provider-specific `extra_body`、`max_rounds` 和 `max_runtime_seconds`。这些运行时设置的环境变量使用
 Python 参数名的大写形式，例如 `MAX_ROUNDS`、`TIMEOUT_SECONDS`、
 `MAX_OUTPUT_TOKENS`、`RECENT_HISTORY_BUDGET_TOKENS` 和
@@ -152,6 +152,39 @@ token 预算，例如调高 `MAX_OUTPUT_TOKENS` 或 `max_output_tokens`。
 
 `READPDF_TIMEOUT_SECONDS` 是工具级保护。PDF 解析超时时，`ReadPDF` 会返回
 可读的工具结果，让 agent 自己决定重试、改用其他方式检查文件，或继续使用其他证据。
+
+如果 OpenAI-compatible provider 的某个模型不支持部分 sampling 参数，例如
+拒绝 `presence_penalty`，不要把该字段设成 `0` 来绕过；应省略字段本身。
+ResearchHarness 支持省略 `temperature`、`top_p` 和 `presence_penalty`：
+
+| 模式 | 如何省略 sampling 参数 |
+| --- | --- |
+| 环境变量 / `.env` | `OMIT_GENERATE_PARAMS="presence_penalty"` |
+| Python 直接导入 | `create_agent(..., omit_generate_params=["presence_penalty"])` |
+| CLI | `--omit-generate-param presence_penalty` |
+| API server | OpenAI SDK `extra_body={"omit-generate-params": ["presence_penalty"]}` |
+
+示例：
+
+```bash
+OMIT_GENERATE_PARAMS="presence_penalty" python3 run_agent.py "Return a one-sentence answer."
+
+python3 run_agent.py \
+  --omit-generate-param presence_penalty \
+  "Return a one-sentence answer."
+```
+
+```python
+from researchharness import create_agent
+
+agent = create_agent(
+    model_name="your-model",
+    api_key="your-key",
+    api_base="https://your-openai-compatible-endpoint/v1",
+    omit_generate_params=["presence_penalty"],
+    require_env=False,
+)
+```
 
 | 模式 | 如何传 provider-specific `extra_body` |
 | --- | --- |

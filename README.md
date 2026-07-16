@@ -86,6 +86,8 @@ If you are new to the project, the recommended reading order is:
 
 ## 📰 News
 
+🚩 **Update** (2026-07-17) OpenAI-compatible sampling parameters can now be omitted consistently across environment, Python import mode, CLI mode, and API server mode for providers that reject fields such as `presence_penalty`.
+
 🚩 **Update** (2026-06-29) `ReadPDF` now has a `READPDF_TIMEOUT_SECONDS` guard that returns a normal tool result on parser timeout, and custom Python `@tool(...)` functions can declare cooperative `timeout_seconds`.
 
 🚩 **Update** (2026-06-11) Context-compaction token budgets are now explicit and validated: `RECENT_HISTORY_BUDGET_TOKENS` and `COMPACT_SUMMARY_MAX_TOKENS` are configurable, and invalid token budgets raise errors instead of being silently adjusted.
@@ -96,10 +98,10 @@ If you are new to the project, the recommended reading order is:
 
 🚩 **Update** (2026-05-22) Added a real API smoke test that runs the five SGI benchmark README server commands and OpenAI SDK examples, then validates each expected final-answer format.
 
-🚩 **Update** (2026-05-22) CLI and API deployments can now expose an explicit complete tool set with repeatable `--tool NAME`, useful when a run needs a smaller or benchmark-specific tool surface.
-
 <details>
 <summary>👉 More News (Click to expand)</summary>
+
+🚩 **Update** (2026-05-22) CLI and API deployments can now expose an explicit complete tool set with repeatable `--tool NAME`, useful when a run needs a smaller or benchmark-specific tool surface.
 
 🚩 **Update** (2026-05-21) ResearchHarness is packaged for one-command installation with `pip install researchharness`. The existing source-tree commands remain compatible, and releases can publish to PyPI automatically from GitHub Releases.
 
@@ -365,6 +367,7 @@ Optional variables:
 - `TEMPERATURE`
 - `TOP_P`
 - `PRESENCE_PENALTY`
+- `OMIT_GENERATE_PARAMS`
 - `COMPACT_TRIGGER_TOKENS`
 - `IMAGE_PART_TOKEN_ESTIMATE`
 - `LLM_IMAGE_MAX_EDGE`
@@ -403,7 +406,8 @@ Details:
   arguments win for that agent instance. This includes `api_key`, `api_base`,
   `model_name`, `timeout_seconds`, `max_input_tokens`, `max_output_tokens`,
   `recent_history_budget_tokens`, `compact_summary_max_tokens`, `max_retries`,
-  `temperature`, `top_p`, `presence_penalty`, `compact_trigger_tokens`,
+  `temperature`, `top_p`, `presence_penalty`, `omit_generate_params`,
+  `compact_trigger_tokens`,
   provider-specific `extra_body`, `max_rounds`, and
   `max_runtime_seconds`.
 - Environment variables for these runtime settings use the upper-case form of
@@ -413,8 +417,9 @@ Details:
   default, the command-line argument wins for that run. For example,
   `--workspace-root` overrides `WORKSPACE_ROOT`.
 - In API server mode, request-local options such as `model`,
-  `extra_body["workspace-root"]`, and `extra_body["llm-extra-body"]` override
-  server defaults only for that request.
+  `extra_body["workspace-root"]`, `extra_body["llm-extra-body"]`, and
+  `extra_body["omit-generate-params"]` override server defaults only for that
+  request.
 - Process environment variables already exported in the shell are not
   overwritten by `.env`.
 - `.env` fills missing environment variables only; it is a convenient local
@@ -441,6 +446,56 @@ Details:
   `COMPACT_TRIGGER_TOKENS` come from process environment variables or `.env`
   in CLI mode. Use the Python API when these need to be set programmatically
   per agent.
+
+### Omitting Unsupported Sampling Parameters
+
+Some OpenAI-compatible gateways reject standard-looking sampling parameters
+for specific models. For example, a model may accept ordinary chat completions
+but reject `presence_penalty`. In that case, omit the unsupported field instead
+of setting it to `0`, because some providers reject the field itself.
+
+Supported omit values are `temperature`, `top_p`, and `presence_penalty`.
+Unknown names are rejected before the run starts.
+
+| Mode | How to omit a sampling parameter |
+|---|---|
+| Environment / `.env` | `OMIT_GENERATE_PARAMS="presence_penalty"` |
+| Python import | `create_agent(..., omit_generate_params=["presence_penalty"])` |
+| CLI | `--omit-generate-param presence_penalty` |
+| OpenAI-compatible API server | OpenAI SDK `extra_body={"omit-generate-params": ["presence_penalty"]}` |
+
+Examples:
+
+```bash
+OMIT_GENERATE_PARAMS="presence_penalty" python3 run_agent.py "Return a one-sentence answer."
+
+python3 run_agent.py \
+  --omit-generate-param presence_penalty \
+  "Return a one-sentence answer."
+```
+
+```python
+from researchharness import create_agent
+
+agent = create_agent(
+    model_name="your-model",
+    api_key="your-key",
+    api_base="https://your-openai-compatible-endpoint/v1",
+    omit_generate_params=["presence_penalty"],
+    require_env=False,
+)
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="EMPTY")
+response = client.chat.completions.create(
+    model="RH",
+    messages=[{"role": "user", "content": "Return a one-sentence answer."}],
+    extra_body={"omit-generate-params": ["presence_penalty"]},
+)
+```
 
 ### Provider-Specific Extra Body
 

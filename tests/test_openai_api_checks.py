@@ -71,6 +71,7 @@ def main() -> int:
         "response_format": {"type": "json_object"},
         "max_tokens": 16,
         "llm-extra-body": {"enable_thinking": False},
+        "omit-generate-params": ["presence_penalty"],
     }
 
     prepared = prepare_openai_input(payload["messages"], TMP_DIR)
@@ -154,6 +155,8 @@ def main() -> int:
             fake_seen.setdefault("models", []).append(str(llm.get("model", "")))
             fake_seen["extra_body"] = llm.get("extra_body", {})
             fake_seen.setdefault("extra_bodies", []).append(llm.get("extra_body", {}))
+            fake_seen["generate_cfg"] = llm.get("generate_cfg", {})
+            fake_seen.setdefault("generate_cfgs", []).append(llm.get("generate_cfg", {}))
 
         def call_compaction_api(self, messages, max_output_tokens=None):
             if messages and messages[0]["content"].startswith("You are the ResearchHarness input wrapper"):
@@ -191,7 +194,7 @@ def main() -> int:
     previous_default_llm_config = openai_server.default_llm_config
     openai_server.MultiTurnReactAgent = FakeAPIAgent
 
-    def fake_default_llm_config(model_name=None, extra_body=None):
+    def fake_default_llm_config(model_name=None, extra_body=None, omit_generate_params=None):
         config = {
             "model": str(model_name or "fake-vision-model"),
             "api_key": "fake",
@@ -206,6 +209,8 @@ def main() -> int:
         }
         if extra_body:
             config["extra_body"] = dict(extra_body)
+        if omit_generate_params:
+            config["generate_cfg"]["omit_generate_params"] = tuple(omit_generate_params)
         return config
 
     openai_server.default_llm_config = fake_default_llm_config
@@ -303,6 +308,25 @@ def main() -> int:
     except openai_server.OpenAICompatError as exc:
         invalid_llm_extra_body_rejected = exc.status_code == 400 and "llm-extra-body" in exc.message
     invalid_llm_extra_body_left_no_runs = not (api_runs_root / "invalid_llm_extra_body").exists()
+
+    invalid_omit_generate_params_rejected = False
+    try:
+        invalid_omit_payload = {
+            "model": "RH",
+            "omit-generate-params": ["presencePenalty"],
+            "messages": [{"role": "user", "content": "Use a bad omit field."}],
+        }
+        run_chat_completion(
+            invalid_omit_payload,
+            ServerConfig(
+                api_runs_dir=api_runs_root / "invalid_omit_generate_params",
+                input_wrapper=False,
+                output_wrapper=False,
+            ),
+        )
+    except openai_server.OpenAICompatError as exc:
+        invalid_omit_generate_params_rejected = exc.status_code == 400 and "omit-generate-params" in exc.message
+    invalid_omit_generate_params_left_no_runs = not (api_runs_root / "invalid_omit_generate_params").exists()
 
     max_tokens_compat_ok = final_max_completion_tokens({"max_tokens": 16}) == 16
     max_tokens_warning_ok = bool(request_parameter_warnings({"max_tokens": 16}))
@@ -422,12 +446,15 @@ def main() -> int:
         and explicit_tool_response["model"] == "RH"
         and "fake-vision-model" in fake_seen.get("models", [])
         and {"enable_thinking": False} in fake_seen.get("extra_bodies", [])
+        and any(cfg.get("omit_generate_params") == ("presence_penalty",) for cfg in fake_seen.get("generate_cfgs", []))
         and any("str_replace_editor" in names and "AskUser" not in names for names in fake_seen.get("function_lists", []))
         and any(names == ["Read", "Write", "Edit", "Bash"] for names in fake_seen.get("function_lists", []))
         and invalid_model_rejected
         and workspace_alias_rejected
         and invalid_llm_extra_body_rejected
         and invalid_llm_extra_body_left_no_runs
+        and invalid_omit_generate_params_rejected
+        and invalid_omit_generate_params_left_no_runs
         and max_tokens_compat_ok
         and max_tokens_warning_ok
         and final_max_completion_tokens({"max_completion_tokens": 16}) == 16
@@ -520,6 +547,8 @@ def main() -> int:
                     "workspace_alias_rejected": workspace_alias_rejected,
                     "invalid_llm_extra_body_rejected": invalid_llm_extra_body_rejected,
                     "invalid_llm_extra_body_left_no_runs": invalid_llm_extra_body_left_no_runs,
+                    "invalid_omit_generate_params_rejected": invalid_omit_generate_params_rejected,
+                    "invalid_omit_generate_params_left_no_runs": invalid_omit_generate_params_left_no_runs,
                     "max_tokens_compat_ok": max_tokens_compat_ok,
                     "max_tokens_warning_ok": max_tokens_warning_ok,
                     "default_model_selection": [default_model_label, default_backend_model],

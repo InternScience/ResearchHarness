@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from agent_base.react_agent import ALL_TOOL_MAP, MultiTurnReactAgent, default_llm_config, default_tool_names
+from agent_base.provider_compat import normalize_omit_generate_params
 from agent_base.tools.custom import build_custom_tool_map, tool
 from agent_base.tools.tooling import ToolBase
 from agent_base.utils import load_default_dotenvs, read_role_prompt_files, require_required_env
@@ -25,6 +26,7 @@ def _apply_llm_overrides(
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
+    omit_generate_params: Optional[str | Sequence[str]] = None,
     compact_trigger_tokens: Optional[int | str] = None,
     extra_body: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
@@ -48,6 +50,8 @@ def _apply_llm_overrides(
     ):
         if value is not None:
             generate_cfg[key] = value
+    if omit_generate_params is not None:
+        generate_cfg["omit_generate_params"] = normalize_omit_generate_params(omit_generate_params)
     llm["generate_cfg"] = generate_cfg
     if extra_body is not None:
         if not isinstance(extra_body, dict):
@@ -134,6 +138,7 @@ def create_agent(
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
+    omit_generate_params: Optional[str | Sequence[str]] = None,
     compact_trigger_tokens: Optional[int | str] = None,
     extra_body: Optional[dict[str, Any]] = None,
     max_rounds: Optional[int] = None,
@@ -170,6 +175,7 @@ def create_agent(
         temperature=temperature,
         top_p=top_p,
         presence_penalty=presence_penalty,
+        omit_generate_params=omit_generate_params,
         compact_trigger_tokens=compact_trigger_tokens,
         extra_body=extra_body,
     )
@@ -201,6 +207,7 @@ def run_agent(
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
     presence_penalty: Optional[float] = None,
+    omit_generate_params: Optional[str | Sequence[str]] = None,
     compact_trigger_tokens: Optional[int | str] = None,
     extra_body: Optional[dict[str, Any]] = None,
     max_rounds: Optional[int] = None,
@@ -227,6 +234,7 @@ def run_agent(
         temperature=temperature,
         top_p=top_p,
         presence_penalty=presence_penalty,
+        omit_generate_params=omit_generate_params,
         compact_trigger_tokens=compact_trigger_tokens,
         extra_body=extra_body,
         max_rounds=max_rounds,

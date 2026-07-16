@@ -69,7 +69,10 @@ def main() -> int:
         function_list=tool_names,
         llm={"model": "fake-model", "generate_cfg": {}},
     )
-    *_, parsed_extra_tools, parsed_llm_extra_body = _parse_cli_args(["hello", "--extra-tool", "str_replace_editor"])
+    parsed_cli_args = _parse_cli_args(["hello", "--extra-tool", "str_replace_editor"])
+    parsed_extra_tools = parsed_cli_args[8]
+    parsed_llm_extra_body = parsed_cli_args[9]
+    parsed_omit_generate_params = parsed_cli_args[10]
 
     details = {
         "default_has_extra": "str_replace_editor" in AVAILABLE_TOOL_MAP,
@@ -78,6 +81,7 @@ def main() -> int:
         "agent_has_extra": "str_replace_editor" in agent.tool_names,
         "parsed_extra_tools": parsed_extra_tools,
         "parsed_llm_extra_body": parsed_llm_extra_body,
+        "parsed_omit_generate_params": parsed_omit_generate_params,
         "view_result": view_result,
         "duplicate_result": duplicate_result,
         "replace_result": replace_result,
@@ -99,6 +103,7 @@ def main() -> int:
         and "str_replace_editor" in agent.tool_names
         and parsed_extra_tools == ["str_replace_editor"]
         and parsed_llm_extra_body == {}
+        and parsed_omit_generate_params is None
         and "     1\talpha" in view_result
         and "     2\tbeta" in view_result
         and "must be unique" in duplicate_result

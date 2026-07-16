@@ -74,6 +74,7 @@ def main() -> int:
         temperature=0.2,
         top_p=0.7,
         presence_penalty=0.3,
+        omit_generate_params=["presence_penalty"],
         compact_trigger_tokens="24k",
         extra_body={"enable_thinking": False},
         max_rounds=12,
@@ -122,6 +123,11 @@ def main() -> int:
         "missing_annotation": lambda: create_agent(model_name="fake-model", tools=[missing_annotation], require_env=False),
         "duplicate_rejected": lambda: create_agent(model_name="fake-model", tools=[Read, Read], require_env=False),
         "invalid_extra_body": lambda: create_agent(model_name="fake-model", extra_body=[], require_env=False),
+        "invalid_omit_generate_params": lambda: create_agent(
+            model_name="fake-model",
+            omit_generate_params=["presencePenalty"],
+            require_env=False,
+        ),
         "mixed_tools_extra": lambda: create_agent(
             model_name="fake-model",
             tools=[Read],
@@ -218,6 +224,7 @@ def main() -> int:
         and details["llm"]["generate_cfg"]["temperature"] == 0.2
         and details["llm"]["generate_cfg"]["top_p"] == 0.7
         and details["llm"]["generate_cfg"]["presence_penalty"] == 0.3
+        and details["llm"]["generate_cfg"]["omit_generate_params"] == ("presence_penalty",)
         and details["llm"]["generate_cfg"]["compact_trigger_tokens"] == "24k"
         and details["llm"]["extra_body"] == {"enable_thinking": False}
         and details["llm"]["max_rounds"] == 12
@@ -241,6 +248,7 @@ def main() -> int:
         and "missing_annotation" in errors
         and "duplicate_rejected" in errors
         and "invalid_extra_body" in errors
+        and "invalid_omit_generate_params" in errors
         and "mixed_tools_extra" in errors
         and "invalid_tool_timeout" in errors
         and "configured_tool_class" in errors

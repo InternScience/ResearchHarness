@@ -2202,6 +2202,28 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
     gpt55_agent._llm_api_base = "http://fake"
     gpt55_reply = gpt55_agent.call_llm_api([{"role": "user", "content": "hello"}], max_tries=1)
 
+    omit_agent = MultiTurnReactAgent(
+        function_list=[],
+        llm={
+            "model": "grok-4.5",
+            "api_base": "http://fake",
+            "api_key": "fake",
+            "generate_cfg": {
+                "max_input_tokens": 32768,
+                "max_output_tokens": 128,
+                "max_retries": 1,
+                "temperature": 0.2,
+                "top_p": 0.7,
+                "presence_penalty": 0.0,
+                "omit_generate_params": ["presence_penalty"],
+            },
+        },
+    )
+    omit_client = FakeClient()
+    omit_agent._llm_client = omit_client
+    omit_agent._llm_api_base = "http://fake"
+    omit_reply = omit_agent.call_llm_api([{"role": "user", "content": "hello"}], max_tries=1)
+
     detail = json.dumps(
         {
             "claude_request_kwargs": claude_client.request_kwargs,
@@ -2210,6 +2232,8 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
             "gpt_reply": gpt_reply,
             "gpt55_request_kwargs": gpt55_client.request_kwargs,
             "gpt55_reply": gpt55_reply,
+            "omit_request_kwargs": omit_client.request_kwargs,
+            "omit_reply": omit_reply,
         },
         ensure_ascii=False,
         indent=2,
@@ -2228,6 +2252,10 @@ def check_claude_models_skip_sampling_params_in_agent_runtime() -> tuple[bool, s
         and gpt55_client.request_kwargs.get("temperature") == 0.2
         and gpt55_client.request_kwargs.get("top_p") == 0.7
         and "presence_penalty" not in gpt55_client.request_kwargs
+        and isinstance(omit_client.request_kwargs, dict)
+        and omit_client.request_kwargs.get("temperature") == 0.2
+        and omit_client.request_kwargs.get("top_p") == 0.7
+        and "presence_penalty" not in omit_client.request_kwargs
     )
     return ok, detail
 

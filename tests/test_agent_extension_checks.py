@@ -274,17 +274,22 @@ def main() -> int:
         parsed_tool_names,
         parsed_extra_tools,
         parsed_llm_extra_body,
+        parsed_omit_generate_params,
     ) = _parse_cli_args(
         ["Inspect the images.", "--images", str(cli_image_source), str(cli_second_image_source)]
     )
-    *_, parsed_cli_tool_names, parsed_cli_extra_tools, parsed_cli_extra_body = _parse_cli_args(
-        ["Inspect the files.", "--tool", "Read", "--tool", "Bash"]
-    )
-    _, _, _, _, _, _, parsed_chat_enabled, _, _, _ = _parse_cli_args(["Inspect the images.", "--chat"])
-    _, _, _, _, _, _, parsed_chat_disabled, _, _, _ = _parse_cli_args(["Inspect the images.", "--no-chat"])
-    *_, parsed_cli_llm_extra_body = _parse_cli_args(
+    parsed_cli_tool_args = _parse_cli_args(["Inspect the files.", "--tool", "Read", "--tool", "Bash"])
+    parsed_cli_tool_names = parsed_cli_tool_args[7]
+    parsed_cli_extra_tools = parsed_cli_tool_args[8]
+    parsed_cli_extra_body = parsed_cli_tool_args[9]
+    parsed_chat_enabled = _parse_cli_args(["Inspect the images.", "--chat"])[6]
+    parsed_chat_disabled = _parse_cli_args(["Inspect the images.", "--no-chat"])[6]
+    parsed_cli_llm_extra_body = _parse_cli_args(
         ["Inspect the images.", "--llm-extra-body-json", '{"enable_thinking": false}']
-    )
+    )[9]
+    parsed_cli_omit_generate_params = _parse_cli_args(
+        ["Inspect the images.", "--omit-generate-param", "presence_penalty"]
+    )[10]
     aged_messages, image_aging = prepare_messages_for_llm(
         [
             {"role": "system", "content": "system"},
@@ -313,12 +318,14 @@ def main() -> int:
                 "parsed_tool_names": parsed_tool_names,
                 "parsed_extra_tools": parsed_extra_tools,
                 "parsed_llm_extra_body": parsed_llm_extra_body,
+                "parsed_omit_generate_params": parsed_omit_generate_params,
                 "parsed_cli_tool_names": parsed_cli_tool_names,
                 "parsed_cli_extra_tools": parsed_cli_extra_tools,
                 "parsed_cli_extra_body": parsed_cli_extra_body,
                 "parsed_chat_enabled": parsed_chat_enabled,
                 "parsed_chat_disabled": parsed_chat_disabled,
                 "parsed_cli_llm_extra_body": parsed_cli_llm_extra_body,
+                "parsed_cli_omit_generate_params": parsed_cli_omit_generate_params,
                 "image_aging": image_aging,
                 "system_prompt_tail": system_message[-300:],
                 "qa_prompt_mentions_synchronous": "synchronous" in qa_prompt_text.lower(),
@@ -370,10 +377,12 @@ def main() -> int:
         and parsed_extra_tools == []
         and parsed_tool_names == []
         and parsed_llm_extra_body == {}
+        and parsed_omit_generate_params is None
         and parsed_cli_tool_names == ["Read", "Bash"]
         and parsed_cli_extra_tools == []
         and parsed_cli_extra_body == {}
         and parsed_cli_llm_extra_body == {"enable_thinking": False}
+        and parsed_cli_omit_generate_params == ("presence_penalty",)
         and (cli_workspace / cli_saved_path).exists()
         and (cli_workspace / cli_second_saved_path).exists()
         and parsed_image_args == [str(cli_image_source), str(cli_second_image_source)]
