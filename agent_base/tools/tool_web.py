@@ -355,13 +355,22 @@ class WebFetch(ToolBase):
         except ValueError as exc:
             return f"[WebFetch] {exc}"
 
-        response = self.readpage_jina(
-            url,
-            start_line=start_line,
-            end_line=end_line,
-            max_chars=max_chars,
-            runtime_deadline=runtime_deadline,
-        )
+        provider = os.getenv("WEBFETCH_PROVIDER", "jina").strip().lower()
+        if provider == "tavily":
+            response = self.readpage_tavily(
+                url,
+                start_line=start_line,
+                end_line=end_line,
+                max_chars=max_chars,
+            )
+        else:
+            response = self.readpage_jina(
+                url,
+                start_line=start_line,
+                end_line=end_line,
+                max_chars=max_chars,
+                runtime_deadline=runtime_deadline,
+            )
 
         if visit_debug_enabled():
             print(f"WebFetch Length {len(response)}")
@@ -427,6 +436,35 @@ class WebFetch(ToolBase):
         content = self.html_readpage_jina(url, runtime_deadline=runtime_deadline)
         if not content or content.startswith("[WebFetch] Failed to read page:") or content == "[WebFetch] Empty content." or content.startswith("[document_parser]"):
             return "[WebFetch] Failed to read page: the provided webpage content could not be accessed. Please check the URL or file format."
+        return self._format_page_content(
+            url=url,
+            content=content,
+            start_line=start_line,
+            end_line=end_line,
+            max_chars=max_chars,
+        )
+
+    def readpage_tavily(
+        self,
+        url: str,
+        *,
+        start_line: int = 1,
+        end_line: Optional[int] = None,
+        max_chars: int = DEFAULT_WEBFETCH_MAX_CHARS,
+    ) -> str:
+        tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
+        if not tavily_api_key:
+            return "[WebFetch] TAVILY_API_KEY is not set."
+        try:
+            from tavily import TavilyClient
+            client = TavilyClient(api_key=tavily_api_key)
+            result = client.extract(urls=[url])
+        except Exception as exc:
+            return f"[WebFetch] Failed to read page: {exc}"
+        results = result.get("results", [])
+        if not results or not results[0].get("raw_content"):
+            return "[WebFetch] Failed to read page: the provided webpage content could not be accessed. Please check the URL or file format."
+        content = results[0]["raw_content"]
         return self._format_page_content(
             url=url,
             content=content,
