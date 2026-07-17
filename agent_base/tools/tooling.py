@@ -66,6 +66,7 @@ BLOCKED_COMMAND_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 SENSITIVE_ENV_EXACT = {
     "API_KEY",
     "SERPER_KEY",
+    "TAVILY_API_KEY",
     "JINA_KEY",
     "MINERU_TOKEN",
     "OPENAI_API_KEY",

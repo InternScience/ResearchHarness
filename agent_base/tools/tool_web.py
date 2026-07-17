@@ -150,6 +150,42 @@ class WebSearch(ToolBase):
         content = f"A Google search for '{query}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
         return content
 
+    def google_search_with_tavily(self, query: str):
+        try:
+            from tavily import TavilyClient
+        except ImportError:
+            return "[WebSearch] tavily-python is not installed."
+
+        api_key = os.getenv("TAVILY_API_KEY", "").strip()
+        if not api_key:
+            return "[WebSearch] TAVILY_API_KEY is not set."
+
+        try:
+            client = TavilyClient(api_key=api_key)
+            response = client.search(query=query, max_results=10, search_depth="basic")
+        except Exception as exc:
+            if search_debug_enabled():
+                print(exc)
+            return f"[WebSearch] Tavily request failed for '{query}': {exc}"
+
+        results = response.get("results", [])
+        if not results:
+            return f"No results found for '{query}'. Try with a more general query."
+
+        web_snippets = []
+        for idx, page in enumerate(results, start=1):
+            title = str(page.get("title", "Untitled result"))
+            link = str(page.get("url", ""))
+            snippet = f"\n{page['content']}" if page.get("content") else ""
+            redacted_version = f"{idx}. [{title}]({link}){snippet}"
+            web_snippets.append(redacted_version)
+
+        if not web_snippets:
+            return f"No results found for '{query}'. Try with a more general query."
+
+        content = f"A Google search for '{query}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
+        return content
+
     def call(self, params: Union[str, dict], **kwargs) -> str:
         try:
             params = self.parse_json_args(params)
@@ -160,6 +196,9 @@ class WebSearch(ToolBase):
         if not isinstance(query, str) or not query.strip():
             return "[WebSearch] 'query' must be a non-empty string."
 
+        provider = os.getenv("SEARCH_PROVIDER", "serper").strip().lower()
+        if provider == "tavily":
+            return self.google_search_with_tavily(query.strip())
         return self.google_search_with_serp(query.strip())
 
 
