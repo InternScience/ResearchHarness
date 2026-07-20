@@ -96,13 +96,14 @@ pip install -e . --no-deps
 | `API_BASE` | OpenAI-compatible chat-completions endpoint 的 base URL。 |
 | `MODEL_NAME` | ResearchHarness 使用的主模型。 |
 | `SERPER_KEY` | `WebSearch` 和 `ScholarSearch` 使用的 Serper key：https://serper.dev/ |
-| `JINA_KEY` | `WebFetch` 使用的 Jina key：https://jina.ai/ |
+| `JINA_KEY` | 默认 hosted `WebFetch` 后端使用的 Jina key：https://jina.ai/。配置 `JINA_READER_BASE_URL` 时不需要。 |
 | `MINERU_TOKEN` | `ReadPDF` 使用的 MinerU token：https://mineru.net/ |
 
 可选变量：
 
 | 变量 | 默认值 | 含义 |
 | --- | --- | --- |
+| `JINA_READER_BASE_URL` | `https://r.jina.ai` | Reader-compatible 的绝对 HTTP(S) endpoint。custom endpoint 不会收到 `JINA_KEY`；ResearchHarness 不负责启动该服务，失败时也不会回退到 hosted Jina。 |
 | `WORKSPACE_ROOT` | `./workspace` | 未显式传入 workspace 时使用的默认 workspace root。 |
 | `MAX_ROUNDS` | `500` | ReAct loop 最大轮次。 |
 | `MAX_RUNTIME_SECONDS` | `10800` | 单次 agent run 的最大运行秒数。 |

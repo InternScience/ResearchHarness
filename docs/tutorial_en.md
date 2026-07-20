@@ -99,13 +99,14 @@ Required variables:
 | `API_BASE` | Base URL for the OpenAI-compatible chat-completions endpoint. |
 | `MODEL_NAME` | Main model used by ResearchHarness. |
 | `SERPER_KEY` | Serper key for `WebSearch` and `ScholarSearch`: https://serper.dev/ |
-| `JINA_KEY` | Jina key for `WebFetch`: https://jina.ai/ |
+| `JINA_KEY` | Jina key for the default hosted `WebFetch` backend: https://jina.ai/. Not required when `JINA_READER_BASE_URL` is configured. |
 | `MINERU_TOKEN` | MinerU token for `ReadPDF`: https://mineru.net/ |
 
 Optional variables:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `JINA_READER_BASE_URL` | `https://r.jina.ai` | Absolute HTTP(S) Reader-compatible endpoint. Custom endpoints do not receive `JINA_KEY`; ResearchHarness does not manage the service or fall back to hosted Jina on failure. |
 | `WORKSPACE_ROOT` | `./workspace` | Default workspace root when no explicit workspace is passed. |
 | `MAX_ROUNDS` | `500` | Maximum ReAct loop rounds. |
 | `MAX_RUNTIME_SECONDS` | `10800` | Maximum wall-clock runtime for one agent run. |
