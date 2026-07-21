@@ -324,12 +324,13 @@ used when they are exposed through a compatible endpoint.
 > **🚨 Required setup before running ResearchHarness**
 >
 > Fill in all required environment variables before starting the agent:
-> `API_KEY`, `API_BASE`, `MODEL_NAME`, `SERPER_KEY`, `JINA_KEY`, and `MINERU_TOKEN`.
+> `API_KEY`, `API_BASE`, `MODEL_NAME`, `SERPER_KEY`, and `MINERU_TOKEN`, plus `JINA_KEY` when using the default hosted Reader backend.
 >
 > Service key sources:
 > - LLM provider key and endpoint: your OpenAI-compatible provider.
 > - Serper API key for `WebSearch` and `ScholarSearch`: https://serper.dev/
-> - Jina API key for `WebFetch`: https://jina.ai/
+> - Jina API key for the default hosted `WebFetch` backend: https://jina.ai/
+> - Or set `JINA_READER_BASE_URL` to an absolute HTTP(S) Reader-compatible endpoint. Custom endpoints do not require or receive `JINA_KEY`.
 > - MinerU token plus [`structai`](https://github.com/black-yt/structai) for `ReadPDF`: https://mineru.net/
 >
 > Before using ResearchHarness for real tasks, run the full tool availability check and require every tool to pass:
@@ -347,12 +348,13 @@ Required variables:
 - `API_BASE`
 - `MODEL_NAME`
 - `SERPER_KEY`
-- `JINA_KEY`
+- `JINA_KEY` when `JINA_READER_BASE_URL` is unset and the default hosted Reader backend is used
 - `MINERU_TOKEN`
 
 Optional variables:
 
 - `WORKSPACE_ROOT`
+- `JINA_READER_BASE_URL` (defaults to `https://r.jina.ai`; ResearchHarness does not start or manage a custom service)
 - `MAX_ROUNDS`
 - `MAX_RUNTIME_SECONDS`
 - `TIMEOUT_SECONDS`
@@ -387,7 +389,11 @@ MODEL_NAME="gpt-5.5"
 SERPER_KEY="your_serper_key"
 JINA_KEY="your_jina_key"
 MINERU_TOKEN="your_mineru_token"
+# JINA_READER_BASE_URL="http://127.0.0.1:3001"
 ```
+
+When `JINA_READER_BASE_URL` is configured, `WebFetch` never forwards `JINA_KEY`
+to that endpoint and never falls back to hosted Jina if the custom service fails.
 
 Sampling defaults and retry policy have code defaults, can be set with
 environment variables, and can be overridden per agent through the Python API.

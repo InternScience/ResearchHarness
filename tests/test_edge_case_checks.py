@@ -69,6 +69,34 @@ def check_required_env_is_enforced() -> tuple[bool, str]:
                 os.environ[key] = value
 
 
+def check_custom_reader_endpoint_makes_jina_key_optional() -> tuple[bool, str]:
+    from agent_base.utils import REQUIRED_ENV_VARS, missing_required_env
+
+    env_names = (*REQUIRED_ENV_VARS, "JINA_READER_BASE_URL")
+    previous = {key: os.environ.get(key) for key in env_names}
+    try:
+        for key in REQUIRED_ENV_VARS:
+            os.environ[key] = f"test-{key.lower()}"
+        os.environ.pop("JINA_KEY", None)
+        os.environ.pop("JINA_READER_BASE_URL", None)
+        hosted_missing = missing_required_env()
+
+        os.environ["JINA_READER_BASE_URL"] = "http://127.0.0.1:3001"
+        custom_missing = missing_required_env()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    detail = json.dumps(
+        {"hosted_missing": hosted_missing, "custom_missing": custom_missing},
+        indent=2,
+    )
+    return hosted_missing == ["JINA_KEY"] and custom_missing == [], detail
+
+
 def check_llm_hard_timeout_interrupts_blocking_call() -> tuple[bool, str]:
     from agent_base.react_agent import LLMHardTimeoutError, llm_hard_timeout
 
@@ -2358,6 +2386,101 @@ def check_webfetch_returns_range_bounded_page_text_without_summary_llm() -> tupl
     return ok, detail
 
 
+def check_webfetch_reader_endpoint_selection_and_auth_isolation() -> tuple[bool, str]:
+    from agent_base.tools import tool_web
+    from agent_base.tools.tool_web import WebFetch
+
+    saved = {name: os.environ.get(name) for name in ("JINA_KEY", "JINA_READER_BASE_URL")}
+    original_get = tool_web.requests.get
+    calls: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def __init__(self, status_code: int, text: str):
+            self.status_code = status_code
+            self.text = text
+
+    def fake_get(url, *, headers, timeout):
+        calls.append({"url": url, "headers": dict(headers), "timeout": timeout})
+        if url.startswith("http://127.0.0.1:3002/"):
+            return FakeResponse(503, "local reader unavailable")
+        return FakeResponse(200, "reader response")
+
+    try:
+        tool_web.requests.get = fake_get
+        os.environ.pop("JINA_KEY", None)
+        os.environ.pop("JINA_READER_BASE_URL", None)
+        missing_key = WebFetch().jina_readpage("https://example.com")
+        missing_key_calls = list(calls)
+
+        os.environ["JINA_KEY"] = "hosted-secret"
+        hosted = WebFetch().jina_readpage("https://example.com/hosted")
+        hosted_call = calls[-1]
+
+        os.environ.pop("JINA_KEY", None)
+        os.environ["JINA_READER_BASE_URL"] = "http://127.0.0.1:3001/"
+        custom_without_key = WebFetch().jina_readpage("https://example.com/custom")
+        custom_without_key_call = calls[-1]
+
+        os.environ["JINA_KEY"] = "must-not-leak"
+        custom_with_key = WebFetch().jina_readpage("https://example.com/custom-key")
+        custom_with_key_call = calls[-1]
+
+        os.environ["JINA_READER_BASE_URL"] = "file:///tmp/reader"
+        calls_before_invalid = len(calls)
+        invalid = WebFetch().jina_readpage("https://example.com/invalid")
+        invalid_made_request = len(calls) != calls_before_invalid
+
+        os.environ["JINA_READER_BASE_URL"] = "http://127.0.0.1:3002"
+        calls_before_failure = len(calls)
+        custom_failure = WebFetch().jina_readpage("https://example.com/failure")
+        failure_calls = calls[calls_before_failure:]
+    finally:
+        tool_web.requests.get = original_get
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    detail = json.dumps(
+        {
+            "missing_key": missing_key,
+            "missing_key_calls": missing_key_calls,
+            "hosted": hosted,
+            "hosted_call": hosted_call,
+            "custom_without_key": custom_without_key,
+            "custom_without_key_call": custom_without_key_call,
+            "custom_with_key": custom_with_key,
+            "custom_with_key_call": custom_with_key_call,
+            "invalid": invalid,
+            "invalid_made_request": invalid_made_request,
+            "custom_failure": custom_failure,
+            "failure_calls": failure_calls,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ok = (
+        missing_key == "[WebFetch] JINA_KEY is not set."
+        and missing_key_calls == []
+        and hosted == "reader response"
+        and hosted_call["url"] == "https://r.jina.ai/https://example.com/hosted"
+        and hosted_call["headers"] == {"Authorization": "Bearer hosted-secret"}
+        and custom_without_key == "reader response"
+        and custom_without_key_call["url"] == "http://127.0.0.1:3001/https://example.com/custom"
+        and custom_without_key_call["headers"] == {}
+        and custom_with_key == "reader response"
+        and custom_with_key_call["headers"] == {}
+        and invalid == "[WebFetch] JINA_READER_BASE_URL must be an absolute HTTP(S) URL."
+        and not invalid_made_request
+        and custom_failure.startswith("[WebFetch] Failed to read page: HTTP 503")
+        and len(failure_calls) == 3
+        and all(call["url"].startswith("http://127.0.0.1:3002/") for call in failure_calls)
+        and all("r.jina.ai" not in str(call["url"]) for call in failure_calls)
+    )
+    return ok, detail
+
+
 def check_session_state_is_only_written_with_trace_dir() -> tuple[bool, str]:
     from agent_base.react_agent import MultiTurnReactAgent
 
@@ -2469,6 +2592,7 @@ def main() -> int:
     checks = [
         ("Workspace root auto-create", check_workspace_root_is_created_when_missing),
         ("Required env enforced", check_required_env_is_enforced),
+        ("Custom Reader makes Jina key optional", check_custom_reader_endpoint_makes_jina_key_optional),
         ("ReadPDF relative image path", check_readpdf_relative_image_path),
         ("ReadPDF timeout result", check_readpdf_timeout_returns_tool_result),
         ("TerminalInterrupt remainder", check_terminal_interrupt_preserves_remainder),
@@ -2495,6 +2619,7 @@ def main() -> int:
         ("Terminal error accepts artifact", check_terminal_error_can_be_accepted_after_completion_artifact),
         ("Claude runtime sampling params", check_claude_models_skip_sampling_params_in_agent_runtime),
         ("WebFetch range-bounded page text", check_webfetch_returns_range_bounded_page_text_without_summary_llm),
+        ("WebFetch Reader endpoint isolation", check_webfetch_reader_endpoint_selection_and_auth_isolation),
         ("Tool schema provider compatibility", check_tool_schemas_avoid_provider_incompatible_mixed_types),
         ("Plaintext result max rounds", check_plaintext_result_rejection_hits_max_rounds),
         ("Bash output bounding", check_bash_output_bounding_and_repeat_collapse),

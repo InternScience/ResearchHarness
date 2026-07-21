@@ -82,8 +82,12 @@ def env_flag(name: str) -> bool:
     return os.getenv(name, "").lower() in {"1", "true", "yes", "on"}
 
 
-def missing_required_env(required: tuple[str, ...] = REQUIRED_ENV_VARS) -> list[str]:
-    return [key for key in required if not os.getenv(key, "").strip()]
+def missing_required_env(required: Optional[tuple[str, ...]] = None) -> list[str]:
+    required_env = REQUIRED_ENV_VARS if required is None else required
+    missing = [key for key in required_env if not os.getenv(key, "").strip()]
+    if required is None and os.getenv("JINA_READER_BASE_URL", "").strip():
+        missing = [key for key in missing if key != "JINA_KEY"]
+    return missing
 
 
 def require_required_env(context: str = "ResearchHarness") -> None:

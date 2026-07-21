@@ -468,6 +468,10 @@ Arguments:
 Behavior:
 
 - Fetches page text through Jina Reader.
+- Uses `https://r.jina.ai` by default and requires `JINA_KEY` for that hosted backend.
+- Accepts an absolute HTTP(S) `JINA_READER_BASE_URL` for a custom Reader-compatible endpoint.
+- Never sends `JINA_KEY` to a custom endpoint and never falls back to hosted Jina when that endpoint fails.
+- Does not start or manage the configured Reader service.
 - Use multiple WebFetch calls when you need to inspect multiple URLs.
 - Applies simple deterministic cleanup to whitespace and blank lines.
 - Applies the requested line range and per-call character limit.
@@ -475,7 +479,8 @@ Behavior:
 
 Dependencies:
 
-- `JINA_KEY`
+- `JINA_KEY` only for the default hosted backend
+- optional `JINA_READER_BASE_URL`
 
 Returns:
 

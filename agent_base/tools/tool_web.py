@@ -4,6 +4,7 @@ import re
 import sys
 import time
 from typing import Optional, Union
+from urllib.parse import urlparse
 
 import requests
 
@@ -12,6 +13,8 @@ from agent_base.utils import PROJECT_ROOT, env_flag, load_dotenv
 
 DEFAULT_WEBFETCH_TIMEOUT_SECONDS = 300.0
 DEFAULT_WEBFETCH_MAX_CHARS = 16384
+DEFAULT_JINA_READER_BASE_URL = "https://r.jina.ai"
+JINA_READER_BASE_URL_ENV = "JINA_READER_BASE_URL"
 
 
 def webfetch_timeout_seconds() -> float:
@@ -26,6 +29,15 @@ def webfetch_default_max_chars() -> int:
     if max_chars <= 0:
         raise ValueError("WEBFETCH_MAX_CHARS must be > 0.")
     return max_chars
+
+
+def jina_reader_base_url() -> str:
+    raw_value = os.getenv(JINA_READER_BASE_URL_ENV)
+    base_url = DEFAULT_JINA_READER_BASE_URL if raw_value is None else raw_value.strip().rstrip("/")
+    parsed = urlparse(base_url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("JINA_READER_BASE_URL must be an absolute HTTP(S) URL.")
+    return base_url
 
 
 def search_debug_enabled() -> bool:
@@ -370,21 +382,25 @@ class WebFetch(ToolBase):
     def jina_readpage(self, url: str, runtime_deadline: Optional[float] = None) -> str:
         max_retries = 3
         timeout = 50
+        try:
+            reader_base_url = jina_reader_base_url()
+        except ValueError as exc:
+            return f"[WebFetch] {exc}"
+
+        use_hosted_reader = reader_base_url == DEFAULT_JINA_READER_BASE_URL
         jina_api_key = os.getenv("JINA_KEY", "").strip()
-        if not jina_api_key:
+        if use_hosted_reader and not jina_api_key:
             return "[WebFetch] JINA_KEY is not set."
+        headers = {"Authorization": f"Bearer {jina_api_key}"} if use_hosted_reader else {}
 
         last_error = "unknown page-fetch error"
         for attempt in range(max_retries):
-            headers = {
-                "Authorization": f"Bearer {jina_api_key}",
-            }
             try:
                 remaining = self._remaining_budget_seconds(runtime_deadline)
                 if remaining is not None and remaining <= 0:
                     return "[WebFetch] Failed to read page: agent runtime limit reached."
                 response = requests.get(
-                    f"https://r.jina.ai/{url}",
+                    f"{reader_base_url}/{url}",
                     headers=headers,
                     timeout=min(timeout, max(remaining, 0.001)) if remaining is not None else timeout,
                 )
