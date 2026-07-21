@@ -69,6 +69,34 @@ def check_required_env_is_enforced() -> tuple[bool, str]:
                 os.environ[key] = value
 
 
+def check_custom_reader_endpoint_makes_jina_key_optional() -> tuple[bool, str]:
+    from agent_base.utils import REQUIRED_ENV_VARS, missing_required_env
+
+    env_names = (*REQUIRED_ENV_VARS, "JINA_READER_BASE_URL")
+    previous = {key: os.environ.get(key) for key in env_names}
+    try:
+        for key in REQUIRED_ENV_VARS:
+            os.environ[key] = f"test-{key.lower()}"
+        os.environ.pop("JINA_KEY", None)
+        os.environ.pop("JINA_READER_BASE_URL", None)
+        hosted_missing = missing_required_env()
+
+        os.environ["JINA_READER_BASE_URL"] = "http://127.0.0.1:3001"
+        custom_missing = missing_required_env()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    detail = json.dumps(
+        {"hosted_missing": hosted_missing, "custom_missing": custom_missing},
+        indent=2,
+    )
+    return hosted_missing == ["JINA_KEY"] and custom_missing == [], detail
+
+
 def check_llm_hard_timeout_interrupts_blocking_call() -> tuple[bool, str]:
     from agent_base.react_agent import LLMHardTimeoutError, llm_hard_timeout
 
@@ -2564,6 +2592,7 @@ def main() -> int:
     checks = [
         ("Workspace root auto-create", check_workspace_root_is_created_when_missing),
         ("Required env enforced", check_required_env_is_enforced),
+        ("Custom Reader makes Jina key optional", check_custom_reader_endpoint_makes_jina_key_optional),
         ("ReadPDF relative image path", check_readpdf_relative_image_path),
         ("ReadPDF timeout result", check_readpdf_timeout_returns_tool_result),
         ("TerminalInterrupt remainder", check_terminal_interrupt_preserves_remainder),
