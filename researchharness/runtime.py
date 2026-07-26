@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional, Sequence
+from uuid import uuid4
 
 from agent_base.react_agent import ALL_TOOL_MAP, MultiTurnReactAgent, default_llm_config, default_tool_names
 from agent_base.provider_compat import normalize_omit_generate_params
+from agent_base.training_export import TrainingExportConfig
 from agent_base.tools.custom import build_custom_tool_map, tool
 from agent_base.tools.tooling import ToolBase
 from agent_base.utils import load_default_dotenvs, read_role_prompt_files, require_required_env
@@ -124,6 +126,69 @@ def _read_role_prompt_blocks(role_prompt_files: Optional[str | Path | Sequence[s
     return read_role_prompt_files(paths)
 
 
+def _resolve_training_export(
+    *,
+    training_export_dir: Optional[str | Path],
+    task_id: Optional[str],
+    task_revision_id: Optional[str],
+    rollout_id: Optional[str],
+    rollout_index: Optional[int],
+    run_id: Optional[str],
+    harness_revision: Optional[str],
+    scaffold_version: str,
+    tool_protocol_version: str,
+    tokenizer_revision: Optional[str],
+    final_patch_path: Optional[str | Path],
+    trace_dir: Optional[str],
+) -> tuple[Optional[TrainingExportConfig], Optional[str], Optional[str]]:
+    requested = training_export_dir is not None or any(
+        value is not None
+        for value in (
+            task_id,
+            task_revision_id,
+            rollout_id,
+            rollout_index,
+            harness_revision,
+            final_patch_path,
+        )
+    )
+    if not requested:
+        return None, trace_dir, run_id
+    missing = [
+        name
+        for name, value in (
+            ("training_export_dir", training_export_dir),
+            ("task_id", task_id),
+            ("task_revision_id", task_revision_id),
+            ("rollout_id", rollout_id),
+            ("rollout_index", rollout_index),
+            ("harness_revision", harness_revision),
+        )
+        if value is None
+    ]
+    if missing:
+        raise ValueError("turn-level training export requires: " + ", ".join(missing))
+    if run_id is not None and not isinstance(run_id, str):
+        raise ValueError("run_id must be a string")
+    resolved_run_id = run_id if run_id is not None else uuid4().hex
+    output_dir = Path(training_export_dir)  # type: ignore[arg-type]
+    resolved_trace_dir = trace_dir or str(output_dir.parent / "trace")
+    config = TrainingExportConfig(
+        output_dir=output_dir,
+        task_id=task_id,  # type: ignore[arg-type]
+        task_revision_id=task_revision_id,  # type: ignore[arg-type]
+        rollout_id=rollout_id,  # type: ignore[arg-type]
+        rollout_index=rollout_index,  # type: ignore[arg-type]
+        run_id=resolved_run_id,
+        harness_revision=harness_revision,  # type: ignore[arg-type]
+        scaffold_version=scaffold_version,
+        tool_protocol_version=tool_protocol_version,
+        tokenizer_revision=tokenizer_revision,
+        final_patch_path=Path(final_patch_path) if final_patch_path is not None else None,
+    )
+    return config, resolved_trace_dir, resolved_run_id
+
+
 def create_agent(
     *,
     model_name: Optional[str] = None,
@@ -149,6 +214,17 @@ def create_agent(
     role_prompt_files: Optional[str | Path | Sequence[str | Path]] = None,
     tools: Optional[Sequence[Any]] = None,
     extra_tools: Optional[Sequence[str]] = None,
+    training_export_dir: Optional[str | Path] = None,
+    task_id: Optional[str] = None,
+    task_revision_id: Optional[str] = None,
+    rollout_id: Optional[str] = None,
+    rollout_index: Optional[int] = None,
+    run_id: Optional[str] = None,
+    harness_revision: Optional[str] = None,
+    scaffold_version: str = "",
+    tool_protocol_version: str = "openai-chat-completions-native-tools-v1",
+    tokenizer_revision: Optional[str] = None,
+    final_patch_path: Optional[str | Path] = None,
     require_env: bool = True,
 ) -> MultiTurnReactAgent:
     """Create a configured single-agent ResearchHarness runtime."""
@@ -162,6 +238,20 @@ def create_agent(
         role_blocks.append(_read_role_prompt_blocks(role_prompt_files))
     resolved_role_prompt = "\n\n".join(block for block in role_blocks if block.strip())
     function_list, custom_tools = _resolve_tools(tools, extra_tools)
+    training_export, trace_dir, resolved_run_id = _resolve_training_export(
+        training_export_dir=training_export_dir,
+        task_id=task_id,
+        task_revision_id=task_revision_id,
+        rollout_id=rollout_id,
+        rollout_index=rollout_index,
+        run_id=run_id,
+        harness_revision=harness_revision,
+        scaffold_version=scaffold_version,
+        tool_protocol_version=tool_protocol_version,
+        tokenizer_revision=tokenizer_revision,
+        final_patch_path=final_patch_path,
+        trace_dir=trace_dir,
+    )
     llm = _apply_llm_overrides(
         default_llm_config(model_name=model_name),
         api_key=api_key,
@@ -188,6 +278,8 @@ def create_agent(
         custom_tools=custom_tools,
         max_rounds=max_rounds,
         max_runtime_seconds=max_runtime_seconds,
+        training_export=training_export,
+        run_id=resolved_run_id,
     )
 
 
@@ -218,6 +310,17 @@ def run_agent(
     images: Optional[str | Path | Sequence[str | Path]] = None,
     tools: Optional[Sequence[Any]] = None,
     extra_tools: Optional[Sequence[str]] = None,
+    training_export_dir: Optional[str | Path] = None,
+    task_id: Optional[str] = None,
+    task_revision_id: Optional[str] = None,
+    rollout_id: Optional[str] = None,
+    rollout_index: Optional[int] = None,
+    run_id: Optional[str] = None,
+    harness_revision: Optional[str] = None,
+    scaffold_version: str = "",
+    tool_protocol_version: str = "openai-chat-completions-native-tools-v1",
+    tokenizer_revision: Optional[str] = None,
+    final_patch_path: Optional[str | Path] = None,
     require_env: bool = True,
 ) -> str:
     """Run ResearchHarness once and return the final assistant text."""
@@ -245,6 +348,17 @@ def run_agent(
         role_prompt_files=role_prompt_files,
         tools=tools,
         extra_tools=extra_tools,
+        training_export_dir=training_export_dir,
+        task_id=task_id,
+        task_revision_id=task_revision_id,
+        rollout_id=rollout_id,
+        rollout_index=rollout_index,
+        run_id=run_id,
+        harness_revision=harness_revision,
+        scaffold_version=scaffold_version,
+        tool_protocol_version=tool_protocol_version,
+        tokenizer_revision=tokenizer_revision,
+        final_patch_path=final_patch_path,
         require_env=require_env,
     )
     return agent.run(prompt, images=images)

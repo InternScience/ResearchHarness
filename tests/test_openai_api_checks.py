@@ -146,8 +146,11 @@ def main() -> int:
     fake_seen: dict[str, str] = {}
 
     class FakeAPIAgent:
-        def __init__(self, function_list, llm, trace_dir, role_prompt=None):
+        def __init__(self, function_list, llm, trace_dir, role_prompt=None, training_export=None, run_id=None):
             self.trace_dir = Path(trace_dir)
+            self.training_export = training_export
+            self.run_id = run_id
+            fake_seen.setdefault("run_ids", []).append(run_id)
             fake_seen["trace_dir"] = str(self.trace_dir)
             fake_seen.setdefault("trace_dirs", []).append(str(self.trace_dir))
             fake_seen.setdefault("function_lists", []).append(list(function_list or []))

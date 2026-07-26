@@ -4,6 +4,7 @@ import tempfile
 import types
 import unittest
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -49,6 +50,39 @@ def _accepted_response(request, *, response_id, content, tool_calls, retry_count
         ],
         "usage": {"prompt_tokens": 100, "completion_tokens": 20},
     }
+    attempts = []
+    for attempt_index in range(retry_count):
+        attempts.append(
+            {
+                "attempt_index": attempt_index,
+                "provider_request": request,
+                "raw_provider_response": {
+                    "id": f"{response_id}-rejected-{attempt_index}",
+                    "model": MODEL,
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [],
+                            },
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 0},
+                },
+                "status": "rejected_empty",
+                "error": "empty response from llm api",
+            }
+        )
+    attempts.append(
+        {
+            "attempt_index": retry_count,
+            "provider_request": request,
+            "raw_provider_response": raw,
+            "status": "accepted",
+        }
+    )
     return {
         "status": "ok",
         "finish_reason": "tool_calls" if tool_calls else "stop",
@@ -59,6 +93,7 @@ def _accepted_response(request, *, response_id, content, tool_calls, retry_count
         "provider_request": request,
         "raw_provider_response": raw,
         "provider_retry_count": retry_count,
+        "provider_attempts": attempts,
         "requested_model": MODEL,
         "provider_model": MODEL,
     }
@@ -289,13 +324,27 @@ def _export(tmp_path, *, name="case", rows=None, patch_file=True):
 
 
 class FakeMessage:
-    def __init__(self, content):
+    def __init__(self, content, tool_calls=None):
         self.content = content
-        self.tool_calls = None
+        self.tool_calls = list(tool_calls or [])
         self.reasoning_content = None
 
     def model_dump(self):
-        return {"role": "assistant", "content": self.content, "tool_calls": None}
+        return {
+            "role": "assistant",
+            "content": self.content,
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    },
+                }
+                for tool_call in self.tool_calls
+            ],
+        }
 
 
 class FakeUsage:
@@ -304,12 +353,16 @@ class FakeUsage:
 
 
 class FakeResponse:
-    def __init__(self, response_id, content):
+    def __init__(self, response_id, content, tool_calls=None):
         self.id = response_id
         self.model = MODEL
         self.usage = FakeUsage()
+        message = FakeMessage(content, tool_calls=tool_calls)
         self.choices = [
-            types.SimpleNamespace(finish_reason="stop", message=FakeMessage(content))
+            types.SimpleNamespace(
+                finish_reason="tool_calls" if message.tool_calls else "stop",
+                message=message,
+            )
         ]
 
     def model_dump(self):
@@ -318,12 +371,47 @@ class FakeResponse:
             "model": self.model,
             "choices": [
                 {
-                    "finish_reason": "stop",
-                    "message": {"role": "assistant", "content": self.choices[0].message.content},
+                    "finish_reason": self.choices[0].finish_reason,
+                    "message": self.choices[0].message.model_dump(),
                 }
             ],
             "usage": self.usage.model_dump(),
         }
+
+
+class FakeMalformedResponse:
+    def __init__(self, response_id):
+        self.id = response_id
+        self.model = MODEL
+        self.usage = FakeUsage()
+        self.choices = []
+
+    def model_dump(self):
+        return {
+            "id": self.id,
+            "model": self.model,
+            "choices": [],
+            "usage": self.usage.model_dump(),
+        }
+
+
+class FakeResponseWithoutDump:
+    def __init__(self, content):
+        self.model = MODEL
+        self.usage = FakeUsage()
+        self.choices = [
+            types.SimpleNamespace(
+                finish_reason="stop",
+                message=FakeMessage(content),
+            )
+        ]
+
+
+def _fake_tool_call(call_id, name, arguments):
+    return types.SimpleNamespace(
+        id=call_id,
+        function=types.SimpleNamespace(name=name, arguments=arguments),
+    )
 
 
 class FakeClient:
@@ -413,6 +501,35 @@ class TrainingExportTests(unittest.TestCase):
             export_turn_training_bundle(config, trace_path=trace, termination="result")
         self.assertFalse(config.output_dir.exists())
 
+    def test_compaction_next_input_uses_real_image_aging_transform(self):
+        from agent_base.react_agent import prepare_messages_for_llm
+
+        rows = _trace_rows()[1:]
+        rows[0]["event_index"] = 1
+        rows[1]["event_index"] = 2
+        post_messages = rows[0]["payload"]["post_messages"]
+        post_messages[1]["content"] = [
+            {"type": "text", "text": "Inspect this screenshot."},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,AAAA"},
+            },
+        ]
+        aged_messages, aging = prepare_messages_for_llm(post_messages)
+        self.assertEqual(aging["omitted_image_count"], 1)
+        rows[1]["payload"]["provider_request"]["messages"] = aged_messages
+        _, bundle = _export(
+            self.tmp_path,
+            name="image-aging-compaction",
+            rows=rows,
+            patch_file=False,
+        )
+        units = _units(bundle)
+        self.assertEqual(validate_turn_training_bundle(bundle)["memory_compaction_count"], 1)
+        serialized_next_input = json.dumps(units[1]["request"]["messages"])
+        self.assertIn("omitted", serialized_next_input)
+        self.assertNotIn("image_url", serialized_next_input)
+
     def test_oracle_request_is_marked_error_for_downstream_fail_closed(self):
         rows = _trace_rows()
         rows[0]["payload"]["provider_request"]["messages"][1]["content"] = "Apply the GOLD PATCH."
@@ -436,6 +553,26 @@ class TrainingExportTests(unittest.TestCase):
                 run_id="run", harness_revision="rev",
             )
 
+    def test_concurrent_publish_has_exactly_one_winner(self):
+        config = _config(self.tmp_path, name="concurrent", patch_file=False)
+        trace = _write_trace(self.tmp_path / "concurrent/trace.jsonl", [_trace_rows()[2]])
+
+        def publish():
+            try:
+                return export_turn_training_bundle(
+                    config,
+                    trace_path=trace,
+                    termination="result",
+                )
+            except FileExistsError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: publish(), range(2)))
+        self.assertEqual(sum(result == config.output_dir for result in results), 1)
+        self.assertEqual(sum(result is None for result in results), 1)
+        validate_turn_training_bundle(config.output_dir)
+
     def test_structured_target_tamper_fails_even_after_resealing(self):
         _, bundle = _export(self.tmp_path)
         units = _units(bundle)
@@ -445,6 +582,100 @@ class TrainingExportTests(unittest.TestCase):
         _reseal_bundle(bundle)
         with self.assertRaisesRegex(ValueError, "accepted trace response"):
             validate_turn_training_bundle(bundle)
+
+    def test_raw_provider_response_must_match_normalized_target(self):
+        rows = _trace_rows()
+        payload = rows[0]["payload"]
+        divergent_raw = json.loads(json.dumps(payload["raw_provider_response"]))
+        divergent_raw["choices"][0]["finish_reason"] = "stop"
+        divergent_raw["choices"][0]["message"]["tool_calls"] = []
+        payload["raw_provider_response"] = divergent_raw
+        payload["response"]["raw_provider_response"] = divergent_raw
+        payload["response"]["provider_attempts"][-1]["raw_provider_response"] = divergent_raw
+        config = _config(self.tmp_path, name="raw-divergence", patch_file=False)
+        trace = _write_trace(self.tmp_path / "raw-divergence/trace.jsonl", rows)
+        with self.assertRaisesRegex(ValueError, "raw provider response"):
+            export_turn_training_bundle(config, trace_path=trace, termination="result")
+        self.assertFalse(config.output_dir.exists())
+
+    def test_compaction_summary_request_must_match_real_provider_request(self):
+        rows = _trace_rows()
+        rows[1]["payload"]["summary_request"] = [
+            {"role": "user", "content": "not the request sent to the provider"}
+        ]
+        config = _config(self.tmp_path, name="summary-divergence", patch_file=False)
+        trace = _write_trace(self.tmp_path / "summary-divergence/trace.jsonl", rows)
+        with self.assertRaisesRegex(ValueError, "summary_request"):
+            export_turn_training_bundle(config, trace_path=trace, termination="result")
+        self.assertFalse(config.output_dir.exists())
+
+    def test_tool_call_requires_matching_result_in_next_model_input(self):
+        rows = [_trace_rows()[0], _trace_rows()[2]]
+        rows[1]["event_index"] = 2
+        request = rows[1]["payload"]["provider_request"]
+        request["messages"] = [
+            {"role": "system", "content": "Fix the repository using tools."},
+            {"role": "user", "content": "Inspect src/auth.py and fix token expiry."},
+        ]
+        config = _config(self.tmp_path, name="missing-tool-result", patch_file=False)
+        trace = _write_trace(self.tmp_path / "missing-tool-result/trace.jsonl", rows)
+        with self.assertRaisesRegex(ValueError, "tool-result"):
+            export_turn_training_bundle(config, trace_path=trace, termination="result")
+
+    def test_unit_id_does_not_depend_on_trace_event_position(self):
+        row_one = _trace_rows()[2]
+        row_one["event_index"] = 1
+        row_two = json.loads(json.dumps(row_one))
+        row_two["event_index"] = 17
+        _, first_bundle = _export(
+            self.tmp_path,
+            name="unit-id-one",
+            rows=[row_one],
+            patch_file=False,
+        )
+        _, second_bundle = _export(
+            self.tmp_path,
+            name="unit-id-two",
+            rows=[row_two],
+            patch_file=False,
+        )
+        self.assertEqual(_units(first_bundle)[0]["unit_id"], _units(second_bundle)[0]["unit_id"])
+
+    def test_provider_owned_path_sha_mapping_is_not_an_artifact_ref(self):
+        rows = _trace_rows()
+        provider_owned = {
+            "path": "provider-owned-id",
+            "sha256": "0" * 64,
+        }
+        rows[0]["payload"]["provider_request"]["extra_body"] = {
+            "provider_metadata": provider_owned
+        }
+        _, bundle = _export(
+            self.tmp_path,
+            name="provider-path-object",
+            rows=rows,
+            patch_file=False,
+        )
+        self.assertEqual(validate_turn_training_bundle(bundle)["capture_error_count"], 0)
+
+    def test_outcome_and_agent_metadata_fields_are_rejected(self):
+        _, unit_bundle = _export(self.tmp_path, name="unit-outcome")
+        units = _units(unit_bundle)
+        units[0]["reward"] = 1.0
+        export_module._finish_unit(units[0])
+        _write_units(unit_bundle, units)
+        _reseal_bundle(unit_bundle)
+        with self.assertRaisesRegex(ValueError, "schema"):
+            validate_turn_training_bundle(unit_bundle)
+
+        _, manifest_bundle = _export(self.tmp_path, name="manifest-agent")
+        manifest_path = manifest_bundle / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["agent_id"] = "invented"
+        _write_json(manifest_path, manifest)
+        _reseal_bundle(manifest_bundle)
+        with self.assertRaisesRegex(ValueError, "multi-agent"):
+            validate_turn_training_bundle(manifest_bundle)
 
     def test_summary_counts_are_recomputed(self):
         _, bundle = _export(self.tmp_path)
@@ -472,6 +703,217 @@ class TrainingExportTests(unittest.TestCase):
         _reseal_bundle(path_bundle)
         with self.assertRaisesRegex(ValueError, "path"):
             validate_turn_training_bundle(path_bundle)
+
+    def test_symlink_and_hardlink_bundle_nodes_are_rejected(self):
+        for link_kind in ("symlink", "hardlink"):
+            with self.subTest(link_kind=link_kind):
+                _, bundle = _export(self.tmp_path, name=f"link-{link_kind}")
+                linked = bundle / "artifacts" / f"{link_kind}.patch"
+                if link_kind == "symlink":
+                    linked.symlink_to(bundle / "agent.patch")
+                else:
+                    os.link(bundle / "agent.patch", linked)
+                with self.assertRaisesRegex(ValueError, "link"):
+                    validate_turn_training_bundle(bundle)
+
+    def test_runtime_provider_boundary_retry_exports_one_accepted_unit(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "runtime"
+        case.mkdir()
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-runtime",
+            task_revision_id="task-runtime@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="runtime-run",
+            harness_revision="test-rev",
+        )
+        agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 2,
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "presence_penalty": 0.0,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="runtime-run",
+        )
+        client = FakeClient(
+            [
+                FakeResponse("empty-first", ""),
+                FakeResponse("accepted-second", "done"),
+            ]
+        )
+        agent._llm_client = client
+        agent._llm_api_base = "http://fake"
+        with patch("agent_base.react_agent.time.sleep", return_value=None):
+            session = agent._run_session("Finish the task.", workspace_root=str(case))
+        self.assertEqual(session["termination"], "result")
+        bundle = Path(session["training_export_path"])
+        unit = _units(bundle)[0]
+        self.assertEqual(unit["capture_status"], "ok")
+        self.assertEqual(unit["provenance"]["provider_retry_count"], 1)
+        self.assertEqual(unit["request"]["messages"], client.requests[-1]["messages"])
+        raw_ref = unit["source"]["raw_provider_response_ref"]
+        self.assertEqual(
+            json.loads((bundle / raw_ref["path"]).read_text())["id"],
+            "accepted-second",
+        )
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(summary["run_id"], "runtime-run")
+        trace_rows = [
+            json.loads(line)
+            for line in (bundle / summary["trace_ref"]["path"]).read_text().splitlines()
+        ]
+        llm_capture = next(row for row in trace_rows if row.get("capture_type") == "llm_call")
+        self.assertEqual(
+            [item["status"] for item in llm_capture["payload"]["response"]["provider_attempts"]],
+            ["rejected_empty", "accepted"],
+        )
+
+    def test_malformed_provider_response_is_retried_and_exported_as_error(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "malformed-runtime"
+        case.mkdir()
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-malformed",
+            task_revision_id="task-malformed@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="malformed-run",
+            harness_revision="test-rev",
+        )
+        agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 2,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="malformed-run",
+        )
+        agent._llm_client = FakeClient(
+            [
+                FakeResponseWithoutDump("unverifiable"),
+                FakeMalformedResponse("malformed-2"),
+            ]
+        )
+        agent._llm_api_base = "http://fake"
+        with patch("agent_base.react_agent.time.sleep", return_value=None):
+            session = agent._run_session("Finish the task.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(session["termination"], "llm api error")
+        self.assertEqual(summary["capture_error_count"], 1)
+        trace_rows = [
+            json.loads(line)
+            for line in (bundle / summary["trace_ref"]["path"]).read_text().splitlines()
+        ]
+        llm_capture = next(row for row in trace_rows if row.get("capture_type") == "llm_call")
+        self.assertEqual(
+            [item["status"] for item in llm_capture["payload"]["response"]["provider_attempts"]],
+            ["parse_error", "parse_error"],
+        )
+
+    def test_runtime_parallel_tool_calls_close_into_next_provider_request(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "parallel-runtime"
+        case.mkdir()
+        (case / "a.txt").write_text("alpha\n", encoding="utf-8")
+        (case / "b.txt").write_text("beta\n", encoding="utf-8")
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-parallel",
+            task_revision_id="task-parallel@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="parallel-run",
+            harness_revision="test-rev",
+        )
+        calls = [
+            _fake_tool_call("call-a", "Read", '{"file_path":"a.txt"}'),
+            _fake_tool_call("call-b", "Read", '{"file_path":"b.txt"}'),
+        ]
+        agent = MultiTurnReactAgent(
+            function_list=["Read"],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=3,
+            training_export=config,
+            run_id="parallel-run",
+        )
+        client = FakeClient(
+            [
+                FakeResponse("tool-round", None, tool_calls=calls),
+                FakeResponse("final-round", "done"),
+            ]
+        )
+        agent._llm_client = client
+        agent._llm_api_base = "http://fake"
+        session = agent._run_session("Read both files.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(summary["main_agent_turn_count"], 2)
+        next_messages = client.requests[1]["messages"]
+        self.assertEqual(
+            [
+                message["tool_call_id"]
+                for message in next_messages
+                if message.get("role") == "tool"
+            ],
+            ["call-a", "call-b"],
+        )
+
+    def test_nonfinite_json_and_invalid_identity_types_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "NaN"):
+            canonical_json_bytes({"value": float("nan")})
+        with self.assertRaisesRegex(ValueError, "rollout_index"):
+            TrainingExportConfig(
+                output_dir=self.tmp_path / EXPORT_DIR_NAME,
+                task_id="t", task_revision_id="r", rollout_id="r0", rollout_index=True,
+                run_id="run", harness_revision="rev",
+            )
+        with self.assertRaisesRegex(ValueError, "task_id"):
+            TrainingExportConfig(
+                output_dir=self.tmp_path / EXPORT_DIR_NAME,
+                task_id=7, task_revision_id="r", rollout_id="r0", rollout_index=0,
+                run_id="run", harness_revision="rev",
+            )
 
 if __name__ == "__main__":
     unittest.main()

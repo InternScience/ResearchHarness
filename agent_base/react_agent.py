@@ -9,6 +9,7 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+from uuid import uuid4
 
 from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
 import tiktoken
@@ -20,6 +21,7 @@ from agent_base.provider_compat import apply_sampling_params, normalize_omit_gen
 from agent_base.prompt import composed_system_prompt
 from agent_base.session_state import AgentSessionState, CompactionRecord, persist_session_state, resolve_session_state_path
 from agent_base.trace_utils import FlatTraceWriter
+from agent_base.training_export import TrainingExportConfig, export_turn_training_bundle
 from agent_base.tools.custom import build_custom_tool_map
 from agent_base.tools.tooling import ToolBase, normalize_workspace_root
 from agent_base.tools.tool_extra import StrReplaceEditor
@@ -348,6 +350,14 @@ def llm_call_trace_payload(
         "native_tools": safe_jsonable(list(native_tools)),
         "response": safe_jsonable(response),
     }
+    if isinstance(response, dict):
+        if isinstance(response.get("provider_request"), dict):
+            payload["provider_request"] = safe_jsonable(response["provider_request"])
+        if isinstance(response.get("raw_provider_response"), dict):
+            payload["raw_provider_response"] = safe_jsonable(response["raw_provider_response"])
+        payload["provider_retry_count"] = int(response.get("provider_retry_count", 0) or 0)
+        payload["requested_model"] = str(response.get("requested_model", model_name) or model_name)
+        payload["provider_model"] = response.get("provider_model")
     if image_aging and int(image_aging.get("omitted_image_count", 0) or 0) > 0:
         payload["image_aging"] = safe_jsonable(image_aging)
     return payload
@@ -720,6 +730,8 @@ class MultiTurnReactAgent(BaseAgent):
         custom_tools: Optional[Sequence[Any]] = None,
         max_rounds: Optional[int] = None,
         max_runtime_seconds: Optional[int] = None,
+        training_export: Optional[TrainingExportConfig] = None,
+        run_id: Optional[str] = None,
     ):
         if not isinstance(llm, dict):
             raise ValueError("llm must be a dict configuration.")
@@ -769,6 +781,15 @@ class MultiTurnReactAgent(BaseAgent):
         else:
             self.llm_generate_cfg.pop("omit_generate_params", None)
         self.trace_dir = Path(trace_dir) if trace_dir else None
+        if training_export is not None and not isinstance(training_export, TrainingExportConfig):
+            raise ValueError("training_export must be a TrainingExportConfig")
+        if training_export is not None and self.trace_dir is None:
+            raise ValueError("turn-level training export requires trace_dir")
+        if training_export is not None and run_id is not None and run_id != training_export.run_id:
+            raise ValueError("run_id differs from the frozen training export run_id")
+        self.training_export = training_export
+        self.run_id = training_export.run_id if training_export is not None else run_id
+        self._training_export_consumed = False
         self.trace_path: Optional[Path] = None
         self.session_state_path: Optional[Path] = None
         self.role_prompt = self.resolve_role_prompt(role_prompt)
@@ -818,12 +839,23 @@ class MultiTurnReactAgent(BaseAgent):
 
         base_sleep_time = 1
         last_error = "unknown llm error"
+        attempts_made = 0
+        last_provider_request: dict[str, Any] = {}
+        last_raw_provider_response: dict[str, Any] = {}
+        provider_attempts: list[dict[str, Any]] = []
         for attempt in range(max_tries):
             remaining = remaining_runtime_seconds(runtime_deadline)
             if remaining is not None and remaining <= 0:
                 last_error = "agent runtime limit reached before llm call could complete"
                 break
+            attempt_record: dict[str, Any] = {
+                "attempt_index": attempt,
+                "provider_request": {},
+                "raw_provider_response": {},
+            }
+            provider_returned = False
             try:
+                attempts_made = attempt + 1
                 if debug_enabled():
                     print(f"--- Attempting to call the service, try {attempt + 1}/{max_tries} ---")
                 request_timeout = (
@@ -861,8 +893,23 @@ class MultiTurnReactAgent(BaseAgent):
                     request_kwargs["tools"] = self._native_tools
                     request_kwargs["tool_choice"] = "auto"
                     request_kwargs["parallel_tool_calls"] = True
+                last_provider_request = safe_jsonable(request_kwargs)
+                attempt_record["provider_request"] = last_provider_request
+                last_raw_provider_response = {}
                 with llm_hard_timeout(request_timeout):
                     chat_response = request_client.chat.completions.create(**request_kwargs)
+                provider_returned = True
+                last_raw_provider_response = {
+                    "model": getattr(chat_response, "model", None),
+                    "response_type": type(chat_response).__name__,
+                }
+                response_dump = getattr(chat_response, "model_dump", None)
+                if not callable(response_dump):
+                    raise ValueError("provider response does not expose model_dump()")
+                dumped_response = safe_jsonable(response_dump())
+                if not isinstance(dumped_response, dict):
+                    raise ValueError("provider model_dump() must return an object")
+                last_raw_provider_response = dumped_response
                 choice = chat_response.choices[0]
                 message = choice.message
                 content = message.content
@@ -874,6 +921,11 @@ class MultiTurnReactAgent(BaseAgent):
                 if assistant_has_meaningful_text(content) or tool_calls:
                     if debug_enabled():
                         print("--- Service call successful, received a valid response ---")
+                    attempt_record.update(
+                        status="accepted",
+                        raw_provider_response=last_raw_provider_response,
+                    )
+                    provider_attempts.append(safe_jsonable(attempt_record))
                     return {
                         "status": "ok",
                         "finish_reason": choice.finish_reason,
@@ -882,16 +934,51 @@ class MultiTurnReactAgent(BaseAgent):
                         "reasoning_content": reasoning_content,
                         "raw_message": raw_message,
                         "usage": usage,
+                        "provider_request": last_provider_request,
+                        "raw_provider_response": last_raw_provider_response,
+                        "provider_retry_count": attempt,
+                        "provider_attempts": provider_attempts,
+                        "requested_model": self.model,
+                        "provider_model": getattr(chat_response, "model", None),
                     }
                 else:
                     last_error = "empty response from llm api"
+                    attempt_record.update(
+                        status="rejected_empty",
+                        raw_provider_response=last_raw_provider_response,
+                        error=last_error,
+                    )
+                    provider_attempts.append(safe_jsonable(attempt_record))
                     if debug_enabled():
                         print(f"Warning: Attempt {attempt + 1} received an empty response.")
 
             except (APIError, APIConnectionError, APITimeoutError, LLMHardTimeoutError) as e:
                 last_error = str(e)
+                attempt_record.update(
+                    status="error",
+                    error_type=type(e).__name__,
+                    error=last_error,
+                    raw_provider_response=last_raw_provider_response,
+                )
+                provider_attempts.append(safe_jsonable(attempt_record))
                 if debug_enabled():
                     print(f"Error: Attempt {attempt + 1} failed with an API or network error: {e}")
+            except Exception as e:
+                if not provider_returned:
+                    raise
+                last_error = f"invalid provider response: {type(e).__name__}: {e}"
+                attempt_record.update(
+                    status="parse_error",
+                    error_type=type(e).__name__,
+                    error=last_error,
+                    raw_provider_response=last_raw_provider_response,
+                )
+                provider_attempts.append(safe_jsonable(attempt_record))
+                if debug_enabled():
+                    print(
+                        f"Error: Attempt {attempt + 1} returned an invalid provider response: "
+                        f"{type(e).__name__}: {e}"
+                    )
 
             if attempt < max_tries - 1:
                 sleep_time = base_sleep_time * (2 ** attempt) + random.uniform(0, 1)
@@ -910,7 +997,16 @@ class MultiTurnReactAgent(BaseAgent):
                 if debug_enabled():
                     print("Error: All retry attempts have been exhausted. The call has failed.")
 
-        return {"status": "error", "error": f"llm api error: {last_error}"}
+        return {
+            "status": "error",
+            "error": f"llm api error: {last_error}",
+            "provider_request": last_provider_request,
+            "raw_provider_response": last_raw_provider_response,
+            "provider_retry_count": max(0, attempts_made - 1),
+            "provider_attempts": provider_attempts,
+            "requested_model": self.model,
+            "provider_model": last_raw_provider_response.get("model"),
+        }
 
     def call_llm_api(self, msgs, max_tries=10, runtime_deadline: Optional[float] = None) -> dict[str, Any]:
         return self._call_chat_completion(
@@ -1014,6 +1110,10 @@ class MultiTurnReactAgent(BaseAgent):
         """Internal execution path with trace data for tests and debugging."""
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string.")
+        if self.training_export is not None and self._training_export_consumed:
+            raise RuntimeError("one immutable training export config may be consumed by only one session")
+        if self.training_export is not None:
+            self._training_export_consumed = True
 
         prompt_text = prompt.strip()
         resolved_workspace_root = normalize_workspace_root(
@@ -1076,6 +1176,7 @@ class MultiTurnReactAgent(BaseAgent):
             model_name=self.model,
             workspace_root=resolved_workspace_root,
             on_event=event_callback,
+            run_id=self.run_id,
         )
         self.trace_path = trace_writer.path
         self.session_state_path = resolve_session_state_path(self.trace_path) if self.trace_path else None
@@ -1110,6 +1211,21 @@ class MultiTurnReactAgent(BaseAgent):
                 error=error,
             )
             persist_state(termination=termination, error=error)
+            training_export_path = ""
+            if self.training_export is not None:
+                if self.trace_path is None:
+                    raise RuntimeError("training export requires a durable trace path")
+                training_export_path = str(
+                    export_turn_training_bundle(
+                        self.training_export,
+                        trace_path=self.trace_path,
+                        termination={
+                            "reason": termination,
+                            "submitted": termination == "result",
+                            "clean_termination": not bool(error),
+                        },
+                    )
+                )
             return {
                 "prompt": prompt_text,
                 "messages": messages,
@@ -1117,6 +1233,7 @@ class MultiTurnReactAgent(BaseAgent):
                 "termination": termination,
                 "trace_path": str(self.trace_path) if self.trace_path else "",
                 "session_state_path": str(self.session_state_path) if self.session_state_path else "",
+                "training_export_path": training_export_path,
             }
 
         def interruption_requested() -> bool:
@@ -1530,22 +1647,29 @@ def resolve_agent_class_for_role_prompt_files(role_prompt_files: Sequence[str]) 
 
 def _parse_cli_args(
     argv: list[str],
-) -> tuple[
-    str,
-    Optional[str],
-    Optional[str],
-    str,
-    list[str],
-    list[str],
-    Optional[bool],
-    list[str],
-    list[str],
-    dict[str, Any],
-]:
+) -> tuple[Any, ...]:
     parser = argparse.ArgumentParser(description="Run the local agent directly from agent_base.react_agent.")
     parser.add_argument("prompt", nargs="*", help="Prompt text.")
     parser.add_argument("--prompt-file", help="Optional UTF-8 text file containing the prompt.")
     parser.add_argument("--trace-dir", help="Optional directory where the run trace JSONL should be created.")
+    parser.add_argument("--training-export-dir", help="Exact output directory; its final name must be turn-training-export-v1.")
+    parser.add_argument("--task-id", help="Stable semantic task identity for turn-level export.")
+    parser.add_argument("--task-revision-id", help="Task/environment/verifier revision identity.")
+    parser.add_argument("--rollout-id", help="Stable rollout identity inside the task.")
+    parser.add_argument("--rollout-index", type=int, help="Non-negative rollout index.")
+    parser.add_argument("--run-id", help="Optional frozen run identity; generated when omitted.")
+    parser.add_argument("--harness-revision", help="Exact ResearchHarness source revision.")
+    parser.add_argument("--scaffold-version", default="", help="Optional scaffold version provenance.")
+    parser.add_argument(
+        "--tool-protocol-version",
+        default="openai-chat-completions-native-tools-v1",
+        help="Tool protocol provenance for exported units.",
+    )
+    parser.add_argument("--tokenizer-revision", help="Optional tokenizer revision provenance.")
+    parser.add_argument(
+        "--final-patch-path",
+        help="Optional explicit final patch path. Generic tasks leave this unset; no patch is guessed.",
+    )
     parser.add_argument(
         "--workspace-root",
         help="Optional workspace root for local file tools, Bash, and TerminalStart.",
@@ -1621,6 +1745,50 @@ def _parse_cli_args(
     omit_generate_params = (
         normalize_omit_generate_params(args.omit_generate_params) if args.omit_generate_params else None
     )
+    training_export: Optional[TrainingExportConfig] = None
+    resolved_trace_dir = args.trace_dir
+    training_requested = args.training_export_dir is not None or any(
+        value is not None
+        for value in (
+            args.task_id,
+            args.task_revision_id,
+            args.rollout_id,
+            args.rollout_index,
+            args.harness_revision,
+            args.final_patch_path,
+        )
+    )
+    if training_requested:
+        missing = [
+            flag
+            for flag, value in (
+                ("--training-export-dir", args.training_export_dir),
+                ("--task-id", args.task_id),
+                ("--task-revision-id", args.task_revision_id),
+                ("--rollout-id", args.rollout_id),
+                ("--rollout-index", args.rollout_index),
+                ("--harness-revision", args.harness_revision),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError("turn-level training export requires: " + ", ".join(missing))
+        output_dir = Path(args.training_export_dir)
+        resolved_run_id = args.run_id if args.run_id is not None else uuid4().hex
+        resolved_trace_dir = resolved_trace_dir or str(output_dir.parent / "trace")
+        training_export = TrainingExportConfig(
+            output_dir=output_dir,
+            task_id=str(args.task_id),
+            task_revision_id=str(args.task_revision_id),
+            rollout_id=str(args.rollout_id),
+            rollout_index=int(args.rollout_index),
+            run_id=resolved_run_id,
+            harness_revision=str(args.harness_revision),
+            scaffold_version=str(args.scaffold_version),
+            tool_protocol_version=str(args.tool_protocol_version),
+            tokenizer_revision=args.tokenizer_revision,
+            final_patch_path=Path(args.final_patch_path) if args.final_patch_path else None,
+        )
 
     prompt_text = ""
     if args.prompt_file:
@@ -1633,7 +1801,7 @@ def _parse_cli_args(
     role_prompt = read_role_prompt_files(args.role_prompt_files)
     return (
         prompt_text,
-        args.trace_dir,
+        resolved_trace_dir,
         args.workspace_root,
         role_prompt,
         list(args.role_prompt_files),
@@ -1643,6 +1811,7 @@ def _parse_cli_args(
         resolve_extra_tool_names(args.extra_tools),
         llm_extra_body,
         omit_generate_params,
+        training_export,
     )
 
 
@@ -1662,7 +1831,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             extra_tools,
             llm_extra_body,
             omit_generate_params,
+            training_export,
         ) = _parse_cli_args(argv or sys.argv[1:])
+        chat_enabled = chat_arg if chat_arg is not None else (sys.stdin.isatty() and sys.stdout.isatty())
+        if training_export is not None and chat_enabled:
+            raise ValueError("V1 immutable training export does not support --chat; run each session as a distinct rollout")
         agent_cls = resolve_agent_class_for_role_prompt_files(role_prompt_files)
         forbidden_tools = set(getattr(agent_cls, "forbidden_tool_names", set()))
         forbidden_requested_tools = sorted(set(tool_names) & forbidden_tools)
@@ -1680,6 +1853,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             llm=default_llm_config(extra_body=llm_extra_body, omit_generate_params=omit_generate_params),
             trace_dir=trace_dir,
             role_prompt=role_prompt or None,
+            training_export=training_export,
+            run_id=training_export.run_id if training_export is not None else None,
         )
         resolved_workspace_root = normalize_workspace_root(workspace_root)
         initial_content_parts: list[dict[str, Any]] = []
@@ -1705,7 +1880,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             event_callback=printer.handle_event,
             initial_content_parts=initial_content_parts or None,
         )
-        chat_enabled = chat_arg if chat_arg is not None else (sys.stdin.isatty() and sys.stdout.isatty())
         messages = session.get("messages", [])
         while chat_enabled:
             try:
