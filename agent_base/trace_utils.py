@@ -1,6 +1,7 @@
 import argparse
 import datetime
 from pathlib import Path
+import re
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
@@ -28,6 +29,9 @@ TRACE_FIELD_NAMES = [
 ]
 
 
+_RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
 class FlatTraceWriter:
     def __init__(
         self,
@@ -36,11 +40,19 @@ class FlatTraceWriter:
         model_name: str,
         workspace_root: str | Path,
         on_event: Optional[Callable[[dict[str, Any]], None]] = None,
+        run_id: Optional[str] = None,
     ):
         self.model_name = model_name
         self.workspace_root = str(workspace_root)
         self.on_event = on_event
-        self.run_id = uuid4().hex
+        if run_id is not None and not isinstance(run_id, str):
+            raise ValueError("run_id must be a string")
+        resolved_run_id = run_id if run_id is not None else uuid4().hex
+        if _RUN_ID_RE.fullmatch(resolved_run_id) is None:
+            raise ValueError(
+                "run_id must be 1-128 characters using only letters, digits, '.', '_', or '-'"
+            )
+        self.run_id = resolved_run_id
         self.path = resolve_trace_path(trace_dir, run_id=self.run_id) if trace_dir else None
         self.event_index = 0
 

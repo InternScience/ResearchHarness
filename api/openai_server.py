@@ -28,6 +28,7 @@ from agent_base.react_agent import (
     resolve_extra_tool_names,
 )
 from agent_base.provider_compat import normalize_omit_generate_params
+from agent_base.training_export import EXPORT_DIR_NAME, TrainingExportConfig
 from agent_base.tools.tooling import normalize_workspace_root
 from agent_base.utils import append_jsonl, image_input_content_parts, read_role_prompt_files, safe_jsonable
 
@@ -53,6 +54,7 @@ REQUEST_WORKSPACE_ROOT_ALIAS_FIELDS = (
 )
 REQUEST_LLM_EXTRA_BODY_FIELD = "llm-extra-body"
 REQUEST_OMIT_GENERATE_PARAMS_FIELD = "omit-generate-params"
+REQUEST_TRAINING_EXPORT_FIELD = "training-export"
 
 INPUT_WRAPPER_SYSTEM_PROMPT = """You are the ResearchHarness input wrapper.
 
@@ -148,8 +150,15 @@ def positive_int(value: Any, name: str) -> int:
     return parsed
 
 
-def make_chat_completion_response(*, request_id: str, model: str, content: str) -> dict[str, Any]:
-    return {
+def make_chat_completion_response(
+    *,
+    request_id: str,
+    model: str,
+    content: str,
+    run_id: str = "",
+    training_export_path: str = "",
+) -> dict[str, Any]:
+    response = {
         "id": request_id,
         "object": "chat.completion",
         "created": int(time.time()),
@@ -162,6 +171,12 @@ def make_chat_completion_response(*, request_id: str, model: str, content: str) 
             }
         ],
     }
+    if run_id:
+        response["researchharness"] = {
+            "run_id": run_id,
+            "training_export_path": training_export_path or None,
+        }
+    return response
 
 
 def validate_chat_payload(payload: Any) -> dict[str, Any]:
@@ -441,6 +456,88 @@ def request_omit_generate_params(payload: dict[str, Any]) -> tuple[str, ...] | N
         raise OpenAICompatError(400, f"{REQUEST_OMIT_GENERATE_PARAMS_FIELD}: {exc}") from exc
 
 
+def request_training_export(
+    payload: dict[str, Any],
+    *,
+    run_root: Path,
+    workspace_root: Path,
+    run_id: str,
+) -> TrainingExportConfig | None:
+    raw_value = payload.get(REQUEST_TRAINING_EXPORT_FIELD)
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, dict):
+        raise OpenAICompatError(400, f"{REQUEST_TRAINING_EXPORT_FIELD} must be a JSON object.")
+    allowed = {
+        "task_id",
+        "task_revision_id",
+        "rollout_id",
+        "rollout_index",
+        "harness_revision",
+        "scaffold_version",
+        "tool_protocol_version",
+        "tokenizer_revision",
+        "final_patch_path",
+    }
+    unknown = sorted(set(raw_value) - allowed)
+    if unknown:
+        raise OpenAICompatError(
+            400,
+            f"{REQUEST_TRAINING_EXPORT_FIELD} contains unsupported fields: {', '.join(unknown)}",
+        )
+    required = (
+        "task_id",
+        "task_revision_id",
+        "rollout_id",
+        "rollout_index",
+        "harness_revision",
+    )
+    missing = [name for name in required if raw_value.get(name) is None]
+    if missing:
+        raise OpenAICompatError(
+            400,
+            f"{REQUEST_TRAINING_EXPORT_FIELD} requires: {', '.join(missing)}",
+        )
+    for name in ("task_id", "task_revision_id", "rollout_id", "harness_revision"):
+        if not isinstance(raw_value.get(name), str) or not raw_value[name].strip():
+            raise OpenAICompatError(400, f"training-export.{name} must be a non-empty string.")
+    rollout_index = raw_value.get("rollout_index")
+    if isinstance(rollout_index, bool) or not isinstance(rollout_index, int) or rollout_index < 0:
+        raise OpenAICompatError(400, "training-export.rollout_index must be a non-negative integer.")
+    for name in ("scaffold_version", "tool_protocol_version", "tokenizer_revision"):
+        if name in raw_value and raw_value[name] is not None and not isinstance(raw_value[name], str):
+            raise OpenAICompatError(400, f"training-export.{name} must be a string.")
+    final_patch_path: Path | None = None
+    if raw_value.get("final_patch_path") is not None:
+        if not isinstance(raw_value["final_patch_path"], str):
+            raise OpenAICompatError(400, "training-export.final_patch_path must be a string.")
+        raw_patch = str(raw_value["final_patch_path"]).strip()
+        patch = Path(raw_patch)
+        if not raw_patch or patch.is_absolute():
+            raise OpenAICompatError(400, "training-export.final_patch_path must be a relative workspace path.")
+        final_patch_path = workspace_root / patch
+        try:
+            final_patch_path.resolve(strict=False).relative_to(workspace_root.resolve())
+        except ValueError as exc:
+            raise OpenAICompatError(400, "training-export.final_patch_path escapes the workspace.") from exc
+    try:
+        return TrainingExportConfig(
+            output_dir=run_root / EXPORT_DIR_NAME,
+            task_id=raw_value["task_id"],
+            task_revision_id=raw_value["task_revision_id"],
+            rollout_id=raw_value["rollout_id"],
+            rollout_index=rollout_index,
+            run_id=run_id,
+            harness_revision=raw_value["harness_revision"],
+            scaffold_version=raw_value.get("scaffold_version", ""),
+            tool_protocol_version=raw_value.get("tool_protocol_version", "openai-chat-completions-native-tools-v1"),
+            tokenizer_revision=raw_value.get("tokenizer_revision"),
+            final_patch_path=final_patch_path,
+        )
+    except (TypeError, ValueError) as exc:
+        raise OpenAICompatError(400, f"invalid {REQUEST_TRAINING_EXPORT_FIELD}: {exc}") from exc
+
+
 def resolve_request_workspace_root(payload: dict[str, Any], default_workspace_root: Path) -> tuple[Path, dict[str, Any]]:
     for alias in REQUEST_WORKSPACE_ROOT_ALIAS_FIELDS:
         if alias in payload:
@@ -491,6 +588,13 @@ def append_api_event(trace_dir: Path, event: str, payload: dict[str, Any]) -> No
 
 def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[str, Any]:
     payload = validate_chat_payload(payload)
+    if payload.get(REQUEST_TRAINING_EXPORT_FIELD) is not None and (
+        config.input_wrapper or config.output_wrapper
+    ):
+        raise OpenAICompatError(
+            400,
+            "V1 training export cannot be combined with input/output wrappers because wrapper model calls are outside the two V1 unit types.",
+        )
     requested_model_label, backend_model = resolve_api_model_selection(str(payload.get("model") or API_MODEL_ALIAS))
     payload["model"] = requested_model_label
     llm_extra_body = request_llm_extra_body(payload)
@@ -504,6 +608,12 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
     if workspace_meta["source"] == "default":
         agent_workspace.mkdir(parents=True, exist_ok=False)
     trace_dir.mkdir(parents=True, exist_ok=False)
+    training_export = request_training_export(
+        payload,
+        run_root=run_root,
+        workspace_root=agent_workspace,
+        run_id=run_id,
+    )
     append_api_event(
         trace_dir,
         "workspace_selection",
@@ -544,6 +654,8 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
         llm=llm_config,
         trace_dir=str(trace_dir),
         role_prompt=config.role_prompt or None,
+        training_export=training_export,
+        run_id=run_id,
     )
 
     if config.input_wrapper:
@@ -589,6 +701,7 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
             "termination": session.get("termination", ""),
             "result_text": agent_result_text,
             "trace_path": session.get("trace_path", ""),
+            "training_export_path": session.get("training_export_path", ""),
         },
     )
 
@@ -631,6 +744,8 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
         request_id=request_id,
         model=requested_model_label,
         content=final_text,
+        run_id=run_id,
+        training_export_path=str(session.get("training_export_path", "") or ""),
     )
 
 

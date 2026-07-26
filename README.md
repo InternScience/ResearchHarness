@@ -257,6 +257,7 @@ Start here if you are reading the codebase for the first time.
 
 - [docs/tutorial_en.md](docs/tutorial_en.md): detailed English tutorial
 - [docs/tutorial_zh.md](docs/tutorial_zh.md): detailed Chinese tutorial
+- [docs/turn-training-export-v1.md](docs/turn-training-export-v1.md): immutable per-provider-call training export contract and usage
 - [tests/](tests): tool checks and end-to-end agent tests
 - [tests/example_files/](tests/example_files): fixed local fixtures
 

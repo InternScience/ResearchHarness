@@ -133,11 +133,31 @@ def compact_messages(
             ),
         },
     ]
-    summary_reply = llm_caller(
-        summary_request,
-        runtime_deadline=runtime_deadline,
-        max_output_tokens=model_profile.compact_summary_max_tokens,
-    )
+    try:
+        summary_reply = llm_caller(
+            summary_request,
+            runtime_deadline=runtime_deadline,
+            max_output_tokens=model_profile.compact_summary_max_tokens,
+        )
+    except KeyboardInterrupt:
+        return CompactionOutcome(
+            status="error",
+            compacted_messages=safe_messages,
+            prior_token_estimate=prior_token_estimate,
+            existing_memory_text=existing_memory_text,
+            summary_request=summary_request,
+            summary_response={
+                "status": "error",
+                "error": "context compaction provider call interrupted",
+                "interrupted": True,
+                "tool_calls": [],
+            },
+            pre_messages=safe_messages,
+            post_messages=safe_messages,
+            error="context compaction provider call interrupted",
+            compacted_group_count=len(compacted_groups),
+            kept_group_count=len(recent_groups),
+        )
     if not isinstance(summary_reply, dict) or summary_reply.get("status") != "ok":
         error = summary_reply.get("error", "context compaction summary call failed") if isinstance(summary_reply, dict) else str(summary_reply)
         return CompactionOutcome(
