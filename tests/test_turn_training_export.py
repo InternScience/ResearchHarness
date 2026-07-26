@@ -622,6 +622,75 @@ class TrainingExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tool-result"):
             export_turn_training_bundle(config, trace_path=trace, termination="result")
 
+    def test_tool_result_closure_binds_to_current_reused_call_id(self):
+        def rows_with_reused_id(include_current_result):
+            rows = [_trace_rows()[0], _trace_rows()[2]]
+            rows[1]["event_index"] = 2
+            call = rows[0]["payload"]["response"]["tool_calls"][0]
+            initial = rows[0]["payload"]["provider_request"]["messages"]
+            old_assistant = {"role": "assistant", "content": "", "tool_calls": [call]}
+            old_result = {
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": "old result",
+            }
+            initial.extend([old_assistant, old_result])
+            next_messages = [
+                *initial,
+                {"role": "assistant", "content": "", "tool_calls": [call]},
+            ]
+            if include_current_result:
+                next_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": "new result",
+                    }
+                )
+            rows[1]["payload"]["provider_request"]["messages"] = next_messages
+            return rows
+
+        config = _config(self.tmp_path, name="reused-id-missing", patch_file=False)
+        trace = _write_trace(
+            self.tmp_path / "reused-id-missing/trace.jsonl",
+            rows_with_reused_id(False),
+        )
+        with self.assertRaisesRegex(ValueError, "tool-result"):
+            export_turn_training_bundle(config, trace_path=trace, termination="result")
+
+        _, bundle = _export(
+            self.tmp_path,
+            name="reused-id-closed",
+            rows=rows_with_reused_id(True),
+            patch_file=False,
+        )
+        self.assertEqual(validate_turn_training_bundle(bundle)["capture_error_count"], 0)
+
+    def test_provider_attempt_metadata_cannot_carry_outcome_labels(self):
+        rows = _trace_rows()
+        rows[0]["payload"]["response"]["provider_attempts"][0]["details"] = {
+            "reward": 1.0
+        }
+        config = _config(self.tmp_path, name="attempt-outcome", patch_file=False)
+        trace = _write_trace(self.tmp_path / "attempt-outcome/trace.jsonl", rows)
+        with self.assertRaisesRegex(ValueError, "outcome"):
+            export_turn_training_bundle(config, trace_path=trace, termination="result")
+
+    def test_rejected_empty_attempt_uses_runtime_text_semantics(self):
+        rows = _trace_rows()
+        rows[0]["payload"]["response"]["provider_attempts"][0][
+            "raw_provider_response"
+        ]["choices"][0]["message"]["content"] = [
+            {"type": "text", "text": "   "}
+        ]
+        _, bundle = _export(
+            self.tmp_path,
+            name="structured-empty-retry",
+            rows=rows,
+            patch_file=False,
+        )
+        self.assertEqual(validate_turn_training_bundle(bundle)["capture_error_count"], 0)
+
     def test_unit_id_does_not_depend_on_trace_event_position(self):
         row_one = _trace_rows()[2]
         row_one["event_index"] = 1

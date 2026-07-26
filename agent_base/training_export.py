@@ -32,6 +32,15 @@ _PROHIBITED_AGENT_KEYS = {
     "parent_run_id",
     "delegation_id",
 }
+_PROHIBITED_OUTCOME_KEYS = {
+    "resolved",
+    "reward",
+    "advantage",
+    "verifier_outcome",
+    "verifier_result",
+    "verifier_reward",
+    "verifier_verdict",
+}
 _ORACLE_KEYS = {
     "gold_patch",
     "hidden_test",
@@ -517,6 +526,8 @@ def _validate_provider_attempts(
     if retry_count != len(attempts) - 1:
         raise ValueError("provider retry count differs from captured attempt closure")
     allowed_statuses = {"accepted", "rejected_empty", "error", "parse_error"}
+    from agent_base.react_agent import assistant_has_meaningful_text
+
     for index, attempt in enumerate(attempts):
         if not isinstance(attempt, Mapping) or attempt.get("attempt_index") != index:
             raise ValueError("provider attempts must be complete and canonically indexed")
@@ -526,6 +537,13 @@ def _validate_provider_attempts(
             raise ValueError("provider attempt request must be an object")
         if not isinstance(attempt.get("raw_provider_response"), Mapping):
             raise ValueError("provider attempt raw response must be an object")
+        attempt_metadata = {
+            key: value
+            for key, value in attempt.items()
+            if key not in {"provider_request", "raw_provider_response"}
+        }
+        if _contains_prohibited_outcome_key(attempt_metadata):
+            raise ValueError("provider attempt contains prohibited outcome metadata")
         if attempt.get("provider_request") != provider_request:
             raise ValueError("provider retry request differs from the final provider request")
         if attempt.get("status") == "accepted" and index != len(attempts) - 1:
@@ -540,8 +558,7 @@ def _validate_provider_attempts(
             rejected_message = rejected_response["message"]
             rejected_content = rejected_message.get("content")
             if (
-                (isinstance(rejected_content, str) and rejected_content.strip())
-                or (not isinstance(rejected_content, str) and rejected_content)
+                assistant_has_meaningful_text(rejected_content)
                 or rejected_message.get("tool_calls")
             ):
                 raise ValueError("rejected-empty attempt contains an acceptable response")
@@ -556,12 +573,51 @@ def _validate_provider_attempts(
         raise ValueError("failed provider capture cannot end in an accepted attempt")
 
 
-def _tool_result_ids(messages: object) -> list[str]:
+def _message_tool_calls(message: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+    raw_tool_calls = message.get("tool_calls")
+    if not isinstance(raw_tool_calls, list):
+        return None
+    tool_calls: list[dict[str, Any]] = []
+    for raw_tool_call in raw_tool_calls:
+        if not isinstance(raw_tool_call, Mapping):
+            return None
+        function = raw_tool_call.get("function")
+        if not isinstance(function, Mapping):
+            return None
+        tool_calls.append(
+            {
+                "id": raw_tool_call.get("id"),
+                "type": raw_tool_call.get("type"),
+                "function": {
+                    "name": function.get("name"),
+                    "arguments": function.get("arguments"),
+                },
+            }
+        )
+    return tool_calls
+
+
+def _tool_result_ids_after_target(
+    messages: object,
+    target_tool_calls: Sequence[Mapping[str, Any]],
+) -> list[str]:
     if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes, bytearray)):
         return []
+    target_position: int | None = None
+    for index, message in enumerate(messages):
+        if not isinstance(message, Mapping) or message.get("role") != "assistant":
+            continue
+        if _message_tool_calls(message) == list(target_tool_calls):
+            target_position = index
+    if target_position is None:
+        return []
     result: list[str] = []
-    for message in messages:
-        if not isinstance(message, Mapping) or message.get("role") != "tool":
+    for message in messages[target_position + 1 :]:
+        if not isinstance(message, Mapping):
+            continue
+        if message.get("role") == "assistant":
+            break
+        if message.get("role") != "tool":
             continue
         tool_call_id = message.get("tool_call_id")
         if isinstance(tool_call_id, str) and tool_call_id:
@@ -634,7 +690,13 @@ def _validate_tool_result_closure(
         payload = row.get("payload")
         if not isinstance(payload, Mapping):
             continue
-        if _contains_ordered_sequence(_tool_result_ids(payload.get("pre_messages")), expected_ids):
+        if _contains_ordered_sequence(
+            _tool_result_ids_after_target(
+                payload.get("pre_messages"),
+                tool_calls,
+            ),
+            expected_ids,
+        ):
             compaction_pre_proof = True
             if payload.get("status") == "ok":
                 compacted_next_input_proof = True
@@ -643,7 +705,10 @@ def _validate_tool_result_closure(
         next_payload = trace_rows[next_main_position].get("payload")
         if isinstance(next_payload, Mapping):
             next_input_proof = _contains_ordered_sequence(
-                _tool_result_ids(_provider_request(next_payload).get("messages")),
+                _tool_result_ids_after_target(
+                    _provider_request(next_payload).get("messages"),
+                    tool_calls,
+                ),
                 expected_ids,
             )
     if not (trace_proves_execution or next_input_proof or compaction_pre_proof):
@@ -1010,6 +1075,20 @@ def _contains_prohibited_key(value: Any) -> bool:
         )
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return any(_contains_prohibited_key(nested) for nested in value)
+    return False
+
+
+def _contains_prohibited_outcome_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        prohibited = any(
+            str(key).casefold().replace("-", "_") in _PROHIBITED_OUTCOME_KEYS
+            for key in value
+        )
+        return prohibited or any(
+            _contains_prohibited_outcome_key(nested) for nested in value.values()
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return any(_contains_prohibited_outcome_key(nested) for nested in value)
     return False
 
 
