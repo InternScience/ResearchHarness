@@ -425,7 +425,10 @@ class FakeClient:
 
     def create(self, **kwargs):
         self.requests.append(kwargs)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class TrainingExportTests(unittest.TestCase):
@@ -853,7 +856,7 @@ class TrainingExportTests(unittest.TestCase):
             ["rejected_empty", "accepted"],
         )
 
-    def test_malformed_provider_response_is_retried_and_exported_as_error(self):
+    def test_provider_boundary_failures_are_retried_and_exported_as_error(self):
         from agent_base.react_agent import MultiTurnReactAgent
 
         case = self.tmp_path / "malformed-runtime"
@@ -876,7 +879,7 @@ class TrainingExportTests(unittest.TestCase):
                 "generate_cfg": {
                     "max_input_tokens": 32768,
                     "max_output_tokens": 128,
-                    "max_retries": 2,
+                    "max_retries": 3,
                 },
             },
             trace_dir=str(case / "trace"),
@@ -887,6 +890,7 @@ class TrainingExportTests(unittest.TestCase):
         )
         agent._llm_client = FakeClient(
             [
+                ValueError("unsupported request field"),
                 FakeResponseWithoutDump("unverifiable"),
                 FakeMalformedResponse("malformed-2"),
             ]
@@ -905,7 +909,7 @@ class TrainingExportTests(unittest.TestCase):
         llm_capture = next(row for row in trace_rows if row.get("capture_type") == "llm_call")
         self.assertEqual(
             [item["status"] for item in llm_capture["payload"]["response"]["provider_attempts"]],
-            ["parse_error", "parse_error"],
+            ["error", "parse_error", "parse_error"],
         )
 
     def test_runtime_parallel_tool_calls_close_into_next_provider_request(self):

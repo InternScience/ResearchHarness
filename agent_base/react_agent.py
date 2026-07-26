@@ -853,6 +853,7 @@ class MultiTurnReactAgent(BaseAgent):
                 "provider_request": {},
                 "raw_provider_response": {},
             }
+            provider_call_started = False
             provider_returned = False
             try:
                 attempts_made = attempt + 1
@@ -896,6 +897,7 @@ class MultiTurnReactAgent(BaseAgent):
                 last_provider_request = safe_jsonable(request_kwargs)
                 attempt_record["provider_request"] = last_provider_request
                 last_raw_provider_response = {}
+                provider_call_started = True
                 with llm_hard_timeout(request_timeout):
                     chat_response = request_client.chat.completions.create(**request_kwargs)
                 provider_returned = True
@@ -964,11 +966,15 @@ class MultiTurnReactAgent(BaseAgent):
                 if debug_enabled():
                     print(f"Error: Attempt {attempt + 1} failed with an API or network error: {e}")
             except Exception as e:
-                if not provider_returned:
+                if not provider_call_started:
                     raise
-                last_error = f"invalid provider response: {type(e).__name__}: {e}"
+                last_error = (
+                    f"invalid provider response: {type(e).__name__}: {e}"
+                    if provider_returned
+                    else f"provider call failed: {type(e).__name__}: {e}"
+                )
                 attempt_record.update(
-                    status="parse_error",
+                    status="parse_error" if provider_returned else "error",
                     error_type=type(e).__name__,
                     error=last_error,
                     raw_provider_response=last_raw_provider_response,
@@ -976,7 +982,7 @@ class MultiTurnReactAgent(BaseAgent):
                 provider_attempts.append(safe_jsonable(attempt_record))
                 if debug_enabled():
                     print(
-                        f"Error: Attempt {attempt + 1} returned an invalid provider response: "
+                        f"Error: Attempt {attempt + 1} failed at the provider boundary: "
                         f"{type(e).__name__}: {e}"
                     )
 
