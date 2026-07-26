@@ -148,6 +148,12 @@ class TrainingExportAPITests(unittest.TestCase):
         agent = FakeAPIAgent.seen[0]
         self.assertEqual(agent.run_id, agent.training_export.run_id)
         self.assertEqual(agent.training_export.output_dir.name, EXPORT_DIR_NAME)
+        metadata = response["researchharness"]
+        self.assertEqual(metadata["run_id"], agent.run_id)
+        self.assertEqual(
+            metadata["training_export_path"],
+            str(agent.training_export.output_dir),
+        )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import replace
 import json
 import os
 import re
@@ -21,7 +22,13 @@ from agent_base.provider_compat import apply_sampling_params, normalize_omit_gen
 from agent_base.prompt import composed_system_prompt
 from agent_base.session_state import AgentSessionState, CompactionRecord, persist_session_state, resolve_session_state_path
 from agent_base.trace_utils import FlatTraceWriter
-from agent_base.training_export import TrainingExportConfig, export_turn_training_bundle
+from agent_base.training_export import (
+    TrainingExportConfig,
+    TrainingExportReservation,
+    export_turn_training_bundle,
+    reserve_turn_training_export,
+    validate_final_patch_source,
+)
 from agent_base.tools.custom import build_custom_tool_map
 from agent_base.tools.tooling import ToolBase, normalize_workspace_root
 from agent_base.tools.tool_extra import StrReplaceEditor
@@ -954,6 +961,26 @@ class MultiTurnReactAgent(BaseAgent):
                     if debug_enabled():
                         print(f"Warning: Attempt {attempt + 1} received an empty response.")
 
+            except KeyboardInterrupt as e:
+                last_error = "provider call interrupted"
+                attempt_record.update(
+                    status="error",
+                    error_type=type(e).__name__,
+                    error=last_error,
+                    raw_provider_response=last_raw_provider_response,
+                )
+                provider_attempts.append(safe_jsonable(attempt_record))
+                return {
+                    "status": "error",
+                    "error": f"llm api error: {last_error}",
+                    "interrupted": True,
+                    "provider_request": last_provider_request,
+                    "raw_provider_response": last_raw_provider_response,
+                    "provider_retry_count": attempt,
+                    "provider_attempts": provider_attempts,
+                    "requested_model": self.model,
+                    "provider_model": last_raw_provider_response.get("model"),
+                }
             except (APIError, APIConnectionError, APITimeoutError, LLMHardTimeoutError) as e:
                 last_error = str(e)
                 attempt_record.update(
@@ -966,12 +993,14 @@ class MultiTurnReactAgent(BaseAgent):
                 if debug_enabled():
                     print(f"Error: Attempt {attempt + 1} failed with an API or network error: {e}")
             except Exception as e:
-                if not provider_call_started:
-                    raise
                 last_error = (
                     f"invalid provider response: {type(e).__name__}: {e}"
                     if provider_returned
-                    else f"provider call failed: {type(e).__name__}: {e}"
+                    else (
+                        f"provider call failed: {type(e).__name__}: {e}"
+                        if provider_call_started
+                        else f"provider setup failed: {type(e).__name__}: {e}"
+                    )
                 )
                 attempt_record.update(
                     status="parse_error" if provider_returned else "error",
@@ -1082,6 +1111,21 @@ class MultiTurnReactAgent(BaseAgent):
         images: Optional[str | Path | Sequence[str | Path]] = None,
     ) -> str:
         """Run the agent on one prompt and return only the final result text."""
+        return str(
+            self.run_session(
+                prompt,
+                workspace_root=workspace_root,
+                images=images,
+            )["result_text"]
+        )
+
+    def run_session(
+        self,
+        prompt: str,
+        workspace_root: Optional[str] = None,
+        images: Optional[str | Path | Sequence[str | Path]] = None,
+    ) -> dict[str, Any]:
+        """Run one prompt and return result text plus trace/export metadata."""
         resolved_workspace_root = normalize_workspace_root(
             workspace_root if workspace_root is not None else self.workspace_root
         )
@@ -1102,7 +1146,7 @@ class MultiTurnReactAgent(BaseAgent):
             run_prompt,
             workspace_root=str(resolved_workspace_root),
             initial_content_parts=initial_content_parts or None,
-        )["result_text"]
+        )
 
     def _run_session(
         self,
@@ -1113,14 +1157,40 @@ class MultiTurnReactAgent(BaseAgent):
         prior_messages: Optional[Sequence[dict[str, Any]]] = None,
         interrupt_event: Optional[threading.Event] = None,
     ) -> dict:
-        """Internal execution path with trace data for tests and debugging."""
+        """Run one session while reserving its immutable export before side effects."""
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string.")
         if self.training_export is not None and self._training_export_consumed:
             raise RuntimeError("one immutable training export config may be consumed by only one session")
+        reservation: TrainingExportReservation | None = None
         if self.training_export is not None:
+            reservation = reserve_turn_training_export(self.training_export)
             self._training_export_consumed = True
+        try:
+            return self._run_session_impl(
+                prompt,
+                workspace_root=workspace_root,
+                event_callback=event_callback,
+                initial_content_parts=initial_content_parts,
+                prior_messages=prior_messages,
+                interrupt_event=interrupt_event,
+                training_export_reservation=reservation,
+            )
+        finally:
+            if reservation is not None:
+                reservation.release()
 
+    def _run_session_impl(
+        self,
+        prompt: str,
+        workspace_root: Optional[str] = None,
+        event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+        initial_content_parts: Optional[Sequence[dict[str, Any]]] = None,
+        prior_messages: Optional[Sequence[dict[str, Any]]] = None,
+        interrupt_event: Optional[threading.Event] = None,
+        training_export_reservation: TrainingExportReservation | None = None,
+    ) -> dict:
+        """Internal execution path with trace data for tests and debugging."""
         prompt_text = prompt.strip()
         resolved_workspace_root = normalize_workspace_root(
             workspace_root if workspace_root is not None else self.workspace_root
@@ -1209,6 +1279,22 @@ class MultiTurnReactAgent(BaseAgent):
                 persist_session_state(self.session_state_path, session_state)
 
         def finalize(result_text: str, termination: str, *, role: str = "runtime", error: str = "") -> dict[str, Any]:
+            export_config = self.training_export
+            if (
+                export_config is not None
+                and export_config.final_patch_path is not None
+            ):
+                try:
+                    validate_final_patch_source(export_config.final_patch_path)
+                except (OSError, ValueError) as exc:
+                    patch_error = f"final patch unavailable: {exc}"
+                    export_config = replace(export_config, final_patch_path=None)
+                    if error:
+                        error = f"{error}; {patch_error}"
+                    else:
+                        termination = "final patch unavailable"
+                        error = patch_error
+                        role = "runtime"
             trace_writer.append(
                 role=role,
                 text=result_text,
@@ -1218,21 +1304,23 @@ class MultiTurnReactAgent(BaseAgent):
             )
             persist_state(termination=termination, error=error)
             training_export_path = ""
-            if self.training_export is not None:
+            if export_config is not None:
                 if self.trace_path is None:
                     raise RuntimeError("training export requires a durable trace path")
                 training_export_path = str(
                     export_turn_training_bundle(
-                        self.training_export,
+                        export_config,
                         trace_path=self.trace_path,
                         termination={
                             "reason": termination,
                             "submitted": termination == "result",
                             "clean_termination": not bool(error),
                         },
+                        _reservation=training_export_reservation,
                     )
                 )
             return {
+                "run_id": trace_writer.run_id,
                 "prompt": prompt_text,
                 "messages": messages,
                 "result_text": result_text,
@@ -1350,6 +1438,11 @@ class MultiTurnReactAgent(BaseAgent):
                         payload=compaction_trace_payload(trigger_reason=compact_reason, outcome=compact_outcome),
                     )
                     persist_state(error=compact_outcome.error)
+                    if (
+                        isinstance(compact_outcome.summary_response, dict)
+                        and compact_outcome.summary_response.get("interrupted") is True
+                    ):
+                        return finalize_interrupted()
             if current_token_estimate > max_input_tokens:
                 result_text = "No result found before the maximum input token limit."
                 termination = f"input token limit reached: {current_token_estimate} > {max_input_tokens}"
@@ -1361,9 +1454,15 @@ class MultiTurnReactAgent(BaseAgent):
             try:
                 llm_reply = self.call_llm_api(llm_request_messages, runtime_deadline=runtime_deadline)
             except KeyboardInterrupt:
-                return finalize_interrupted()
-            if interruption_requested():
-                return finalize_interrupted()
+                llm_reply = {
+                    "status": "error",
+                    "error": "llm api error: provider call interrupted",
+                    "interrupted": True,
+                    "tool_calls": [],
+                    "provider_retry_count": 0,
+                    "requested_model": self.model,
+                    "provider_model": None,
+                }
             trace_writer.append(
                 role="runtime",
                 text="",
@@ -1380,6 +1479,11 @@ class MultiTurnReactAgent(BaseAgent):
             session_state.last_input_tokens = input_tokens_from_usage(
                 llm_reply.get("usage") if isinstance(llm_reply, dict) else None
             )
+            if (
+                isinstance(llm_reply, dict)
+                and llm_reply.get("interrupted") is True
+            ) or interruption_requested():
+                return finalize_interrupted()
             assistant_content = llm_reply.get("content") if isinstance(llm_reply, dict) else None
             assistant_tool_calls = llm_reply.get("tool_calls", []) if isinstance(llm_reply, dict) else []
             assistant_reasoning = llm_reply.get("reasoning_content") if isinstance(llm_reply, dict) else None

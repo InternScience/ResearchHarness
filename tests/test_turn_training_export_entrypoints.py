@@ -2,11 +2,13 @@ import tempfile
 import unittest
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent_base.react_agent import _parse_cli_args
 from agent_base.training_export import EXPORT_DIR_NAME
+import researchharness.runtime as runtime_module
 from researchharness.runtime import _resolve_training_export
 
 
@@ -89,6 +91,35 @@ class TrainingExportEntrypointTests(unittest.TestCase):
         self.assertIsNone(config)
         self.assertEqual(trace_dir, "trace")
         self.assertEqual(run_id, "ordinary-run")
+
+    def test_public_python_api_can_return_export_metadata_without_breaking_text_default(self):
+        class FakeAgent:
+            def run_session(self, prompt, images=None):
+                return {
+                    "run_id": "run-python",
+                    "result_text": "done",
+                    "trace_path": "/tmp/trace.jsonl",
+                    "training_export_path": "/tmp/turn-training-export-v1",
+                }
+
+            def run(self, prompt, images=None):
+                return "done"
+
+        fake_agent = FakeAgent()
+        with patch.object(runtime_module, "create_agent", return_value=fake_agent):
+            session = runtime_module.run_agent(
+                "fix",
+                return_session=True,
+                require_env=False,
+            )
+        self.assertEqual(session["run_id"], "run-python")
+        self.assertEqual(
+            session["training_export_path"],
+            "/tmp/turn-training-export-v1",
+        )
+        with patch.object(runtime_module, "create_agent", return_value=fake_agent):
+            text = runtime_module.run_agent("fix", require_env=False)
+        self.assertEqual(text, "done")
 
 
 if __name__ == "__main__":

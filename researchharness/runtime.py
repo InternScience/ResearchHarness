@@ -321,9 +321,12 @@ def run_agent(
     tool_protocol_version: str = "openai-chat-completions-native-tools-v1",
     tokenizer_revision: Optional[str] = None,
     final_patch_path: Optional[str | Path] = None,
+    return_session: bool = False,
     require_env: bool = True,
-) -> str:
-    """Run ResearchHarness once and return the final assistant text."""
+) -> str | dict[str, Any]:
+    """Run once; optionally return trace/export metadata with the final text."""
+    if not isinstance(return_session, bool):
+        raise ValueError("return_session must be a boolean")
     agent = create_agent(
         model_name=model_name,
         api_key=api_key,
@@ -361,6 +364,8 @@ def run_agent(
         final_patch_path=final_patch_path,
         require_env=require_env,
     )
+    if return_session:
+        return agent.run_session(prompt, images=images)
     return agent.run(prompt, images=images)
 
 

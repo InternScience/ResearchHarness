@@ -1,6 +1,8 @@
+import io
 import json
 import os
 import tempfile
+import threading
 import types
 import unittest
 import sys
@@ -431,6 +433,22 @@ class FakeClient:
         return response
 
 
+class FakeSetupFailureClient:
+    def with_options(self, **kwargs):
+        raise RuntimeError("client setup crash")
+
+
+class FakeInterruptingClient(FakeClient):
+    def __init__(self, interrupt_event, responses):
+        super().__init__(responses)
+        self.interrupt_event = interrupt_event
+
+    def create(self, **kwargs):
+        response = super().create(**kwargs)
+        self.interrupt_event.set()
+        return response
+
+
 class TrainingExportTests(unittest.TestCase):
     def setUp(self):
         self._temp = tempfile.TemporaryDirectory()
@@ -626,7 +644,7 @@ class TrainingExportTests(unittest.TestCase):
             export_turn_training_bundle(config, trace_path=trace, termination="result")
 
     def test_tool_result_closure_binds_to_current_reused_call_id(self):
-        def rows_with_reused_id(include_current_result):
+        def rows_with_reused_id(include_current_result, include_current_assistant=True):
             rows = [_trace_rows()[0], _trace_rows()[2]]
             rows[1]["event_index"] = 2
             call = rows[0]["payload"]["response"]["tool_calls"][0]
@@ -638,10 +656,11 @@ class TrainingExportTests(unittest.TestCase):
                 "content": "old result",
             }
             initial.extend([old_assistant, old_result])
-            next_messages = [
-                *initial,
-                {"role": "assistant", "content": "", "tool_calls": [call]},
-            ]
+            next_messages = [*initial]
+            if include_current_assistant:
+                next_messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": [call]}
+                )
             if include_current_result:
                 next_messages.append(
                     {
@@ -661,6 +680,22 @@ class TrainingExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tool-result"):
             export_turn_training_bundle(config, trace_path=trace, termination="result")
 
+        omitted_config = _config(
+            self.tmp_path,
+            name="reused-id-current-omitted",
+            patch_file=False,
+        )
+        omitted_trace = _write_trace(
+            self.tmp_path / "reused-id-current-omitted/trace.jsonl",
+            rows_with_reused_id(False, include_current_assistant=False),
+        )
+        with self.assertRaisesRegex(ValueError, "tool-result"):
+            export_turn_training_bundle(
+                omitted_config,
+                trace_path=omitted_trace,
+                termination="result",
+            )
+
         _, bundle = _export(
             self.tmp_path,
             name="reused-id-closed",
@@ -678,6 +713,26 @@ class TrainingExportTests(unittest.TestCase):
         trace = _write_trace(self.tmp_path / "attempt-outcome/trace.jsonl", rows)
         with self.assertRaisesRegex(ValueError, "outcome"):
             export_turn_training_bundle(config, trace_path=trace, termination="result")
+
+        agent_rows = _trace_rows()
+        agent_rows[0]["payload"]["response"]["provider_attempts"][0]["details"] = {
+            "parent_agent_id": "invented"
+        }
+        agent_config = _config(
+            self.tmp_path,
+            name="attempt-agent",
+            patch_file=False,
+        )
+        agent_trace = _write_trace(
+            self.tmp_path / "attempt-agent/trace.jsonl",
+            agent_rows,
+        )
+        with self.assertRaisesRegex(ValueError, "multi-agent"):
+            export_turn_training_bundle(
+                agent_config,
+                trace_path=agent_trace,
+                termination="result",
+            )
 
     def test_rejected_empty_attempt_uses_runtime_text_semantics(self):
         rows = _trace_rows()
@@ -855,6 +910,33 @@ class TrainingExportTests(unittest.TestCase):
             [item["status"] for item in llm_capture["payload"]["response"]["provider_attempts"]],
             ["rejected_empty", "accepted"],
         )
+        duplicate_agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                },
+            },
+            trace_dir=str(case / "duplicate-trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="runtime-run",
+        )
+        duplicate_client = FakeClient([FakeResponse("must-not-run", "done")])
+        duplicate_agent._llm_client = duplicate_client
+        duplicate_agent._llm_api_base = "http://fake"
+        with self.assertRaises(FileExistsError):
+            duplicate_agent._run_session(
+                "Must fail before provider.",
+                workspace_root=str(case),
+            )
+        self.assertEqual(duplicate_client.requests, [])
 
     def test_provider_boundary_failures_are_retried_and_exported_as_error(self):
         from agent_base.react_agent import MultiTurnReactAgent
@@ -910,6 +992,256 @@ class TrainingExportTests(unittest.TestCase):
         self.assertEqual(
             [item["status"] for item in llm_capture["payload"]["response"]["provider_attempts"]],
             ["error", "parse_error", "parse_error"],
+        )
+
+    def test_provider_setup_failure_is_exported_as_error_rollout(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "setup-failure-runtime"
+        case.mkdir()
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-setup-failure",
+            task_revision_id="task-setup-failure@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="setup-failure-run",
+            harness_revision="test-rev",
+        )
+        agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 2,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="setup-failure-run",
+        )
+        agent._llm_client = FakeSetupFailureClient()
+        agent._llm_api_base = "http://fake"
+        with patch("agent_base.react_agent.time.sleep", return_value=None):
+            session = agent._run_session("Finish the task.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(session["termination"], "llm api error")
+        self.assertEqual(summary["capture_error_count"], 1)
+        trace_rows = [
+            json.loads(line)
+            for line in (bundle / summary["trace_ref"]["path"]).read_text().splitlines()
+        ]
+        llm_capture = next(row for row in trace_rows if row.get("capture_type") == "llm_call")
+        attempts = llm_capture["payload"]["response"]["provider_attempts"]
+        self.assertEqual([item["status"] for item in attempts], ["error", "error"])
+        self.assertTrue(
+            all(item["error_type"] == "RuntimeError" for item in attempts)
+        )
+
+    def test_missing_explicit_patch_marks_rollout_error_without_losing_units(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "missing-patch-runtime"
+        case.mkdir()
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-missing-patch",
+            task_revision_id="task-missing-patch@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="missing-patch-run",
+            harness_revision="test-rev",
+            final_patch_path=case / "missing.patch",
+        )
+        agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="missing-patch-run",
+        )
+        agent._llm_client = FakeClient([FakeResponse("patch-result", "done")])
+        agent._llm_api_base = "http://fake"
+        session = agent._run_session("Finish the task.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(session["termination"], "final patch unavailable")
+        self.assertFalse(summary["termination"]["clean_termination"])
+        self.assertFalse(summary["termination"]["submitted"])
+        self.assertIsNone(summary["final_patch_ref"])
+        self.assertEqual(summary["main_agent_turn_count"], 1)
+        self.assertEqual(_units(bundle)[0]["capture_status"], "ok")
+
+    def test_inflight_interrupt_preserves_returned_provider_response(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "inflight-interrupt"
+        case.mkdir()
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-inflight-interrupt",
+            task_revision_id="task-inflight-interrupt@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="inflight-interrupt-run",
+            harness_revision="test-rev",
+        )
+        agent = MultiTurnReactAgent(
+            function_list=[],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="inflight-interrupt-run",
+        )
+        interrupt_event = threading.Event()
+        agent._llm_client = FakeInterruptingClient(
+            interrupt_event,
+            [FakeResponse("real-but-interrupted", "completed provider response")],
+        )
+        agent._llm_api_base = "http://fake"
+        session = agent._run_session(
+            "Finish the task.",
+            workspace_root=str(case),
+            interrupt_event=interrupt_event,
+        )
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        unit = _units(bundle)[0]
+        self.assertEqual(session["termination"], "interrupted")
+        self.assertEqual(summary["main_agent_turn_count"], 1)
+        self.assertEqual(unit["capture_status"], "ok")
+        raw = json.loads(
+            (bundle / unit["source"]["raw_provider_response_ref"]["path"]).read_text()
+        )
+        self.assertEqual(raw["id"], "real-but-interrupted")
+
+    def test_tool_interrupt_preserves_pending_target_as_error_unit(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "tool-interrupt"
+        case.mkdir()
+        (case / "a.txt").write_text("alpha\n", encoding="utf-8")
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-tool-interrupt",
+            task_revision_id="task-tool-interrupt@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="tool-interrupt-run",
+            harness_revision="test-rev",
+        )
+        call = _fake_tool_call("call-interrupt", "Read", '{"file_path":"a.txt"}')
+        agent = MultiTurnReactAgent(
+            function_list=["Read"],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=2,
+            training_export=config,
+            run_id="tool-interrupt-run",
+        )
+        agent._llm_client = FakeClient(
+            [FakeResponse("pending-tool", None, tool_calls=[call])]
+        )
+        agent._llm_api_base = "http://fake"
+        with patch.object(agent, "custom_call_tool", side_effect=KeyboardInterrupt):
+            session = agent._run_session("Read a.txt.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        self.assertEqual(session["termination"], "interrupted")
+        self.assertEqual(summary["main_agent_turn_count"], 1)
+        self.assertEqual(summary["capture_error_count"], 1)
+        self.assertEqual(_units(bundle)[0]["capture_status"], "error")
+
+    def test_compaction_interrupt_exports_failed_semantic_unit(self):
+        from agent_base.react_agent import MultiTurnReactAgent
+
+        case = self.tmp_path / "compaction-interrupt"
+        case.mkdir()
+        (case / "a.txt").write_text("alpha\n", encoding="utf-8")
+        config = TrainingExportConfig(
+            output_dir=case / EXPORT_DIR_NAME,
+            task_id="task-compaction-interrupt",
+            task_revision_id="task-compaction-interrupt@1",
+            rollout_id="r0",
+            rollout_index=0,
+            run_id="compaction-interrupt-run",
+            harness_revision="test-rev",
+        )
+        call = _fake_tool_call("call-before-memory", "Read", '{"file_path":"a.txt"}')
+        agent = MultiTurnReactAgent(
+            function_list=["Read"],
+            llm={
+                "model": MODEL,
+                "api_base": "http://fake",
+                "api_key": "fake",
+                "generate_cfg": {
+                    "max_input_tokens": 32768,
+                    "max_output_tokens": 128,
+                    "max_retries": 1,
+                    "compact_trigger_tokens": 1,
+                    "recent_history_budget_tokens": 1,
+                },
+            },
+            trace_dir=str(case / "trace"),
+            workspace_root=str(case),
+            max_rounds=3,
+            training_export=config,
+            run_id="compaction-interrupt-run",
+        )
+        agent._llm_client = FakeClient(
+            [FakeResponse("tool-before-memory", None, tool_calls=[call])]
+        )
+        agent._llm_api_base = "http://fake"
+        with patch.object(agent, "call_compaction_api", side_effect=KeyboardInterrupt):
+            session = agent._run_session("Read a.txt.", workspace_root=str(case))
+        bundle = Path(session["training_export_path"])
+        summary = validate_turn_training_bundle(bundle)
+        units = _units(bundle)
+        self.assertEqual(session["termination"], "interrupted")
+        self.assertEqual(summary["main_agent_turn_count"], 1)
+        self.assertEqual(summary["memory_compaction_count"], 1)
+        self.assertEqual(
+            [unit["capture_status"] for unit in units],
+            ["ok", "error"],
         )
 
     def test_runtime_parallel_tool_calls_close_into_next_provider_request(self):
@@ -987,6 +1319,19 @@ class TrainingExportTests(unittest.TestCase):
                 task_id=7, task_revision_id="r", rollout_id="r0", rollout_index=0,
                 run_id="run", harness_revision="rev",
             )
+
+    def test_validator_cli_prints_validated_rollout_summary(self):
+        _, bundle = _export(
+            self.tmp_path,
+            name="validator-cli",
+            patch_file=False,
+        )
+        output = io.StringIO()
+        with patch("sys.stdout", output):
+            self.assertEqual(export_module.main([str(bundle)]), 0)
+        rendered = json.loads(output.getvalue())
+        self.assertEqual(rendered["run_id"], RUN_ID)
+        self.assertEqual(rendered["main_agent_turn_count"], 2)
 
 if __name__ == "__main__":
     unittest.main()

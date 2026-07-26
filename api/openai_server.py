@@ -150,8 +150,15 @@ def positive_int(value: Any, name: str) -> int:
     return parsed
 
 
-def make_chat_completion_response(*, request_id: str, model: str, content: str) -> dict[str, Any]:
-    return {
+def make_chat_completion_response(
+    *,
+    request_id: str,
+    model: str,
+    content: str,
+    run_id: str = "",
+    training_export_path: str = "",
+) -> dict[str, Any]:
+    response = {
         "id": request_id,
         "object": "chat.completion",
         "created": int(time.time()),
@@ -164,6 +171,12 @@ def make_chat_completion_response(*, request_id: str, model: str, content: str) 
             }
         ],
     }
+    if run_id:
+        response["researchharness"] = {
+            "run_id": run_id,
+            "training_export_path": training_export_path or None,
+        }
+    return response
 
 
 def validate_chat_payload(payload: Any) -> dict[str, Any]:
@@ -731,6 +744,8 @@ def run_chat_completion(payload: dict[str, Any], config: ServerConfig) -> dict[s
         request_id=request_id,
         model=requested_model_label,
         content=final_text,
+        run_id=run_id,
+        training_export_path=str(session.get("training_export_path", "") or ""),
     )
 
 

@@ -85,8 +85,14 @@ result = run_agent(
     run_id="run-auth-r0",
     harness_revision="72e8a44737aadabc",
     final_patch_path="/outputs/r0/agent.patch",
+    return_session=True,
 )
+print(result["run_id"], result["training_export_path"])
 ```
+
+The default remains backward-compatible and returns only final text.
+`return_session=True` returns the final text together with `run_id`,
+`trace_path`, and `training_export_path`.
 
 ## OpenAI-compatible API
 
@@ -111,7 +117,9 @@ The API uses one outer `run_id` for the agent trace and export, and writes the
 bundle under `<api-runs-dir>/<run_id>/turn-training-export-v1`. API patch paths
 are relative to the selected workspace. Training export fails closed when input
 or output LLM wrappers are enabled because wrapper calls are outside V1's two
-unit types.
+unit types. Successful responses expose the frozen identity and bundle location
+under `response.researchharness.run_id` and
+`response.researchharness.training_export_path`.
 
 ## Validation
 
@@ -122,3 +130,9 @@ multi-agent fields, path traversal, symlinks, hardlinks, and overwrite safety.
 
 Only units with `capture_status="ok"` are SFT candidates. Selection policy is a
 downstream responsibility.
+
+Validate a completed bundle from the command line:
+
+```bash
+python -m agent_base.training_export /outputs/r0/turn-training-export-v1
+```

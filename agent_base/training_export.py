@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ctypes
 from dataclasses import dataclass
 import errno
@@ -13,6 +14,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import sys
 import tempfile
 from typing import Any, Mapping, Sequence
 
@@ -120,6 +122,38 @@ class TrainingExportConfig:
             "rollout_index": self.rollout_index,
             "run_id": self.run_id,
         }
+
+
+@dataclass(slots=True)
+class TrainingExportReservation:
+    target: Path
+    lock_path: Path
+    lock_fd: int
+    lock_device: int
+    lock_inode: int
+    active: bool = True
+
+    def release(self) -> None:
+        if not self.active:
+            return
+        self.active = False
+        try:
+            os.close(self.lock_fd)
+        except OSError:
+            pass
+        try:
+            observed = self.lock_path.lstat()
+        except FileNotFoundError:
+            return
+        if (
+            observed.st_dev == self.lock_device
+            and observed.st_ino == self.lock_inode
+            and stat.S_ISREG(observed.st_mode)
+        ):
+            try:
+                self.lock_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -542,6 +576,8 @@ def _validate_provider_attempts(
             for key, value in attempt.items()
             if key not in {"provider_request", "raw_provider_response"}
         }
+        if _contains_prohibited_key(attempt_metadata):
+            raise ValueError("provider attempt contains prohibited multi-agent metadata")
         if _contains_prohibited_outcome_key(attempt_metadata):
             raise ValueError("provider attempt contains prohibited outcome metadata")
         if attempt.get("provider_request") != provider_request:
@@ -600,17 +636,20 @@ def _message_tool_calls(message: Mapping[str, Any]) -> list[dict[str, Any]] | No
 def _tool_result_ids_after_target(
     messages: object,
     target_tool_calls: Sequence[Mapping[str, Any]],
+    *,
+    prior_occurrence_count: int,
 ) -> list[str]:
     if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes, bytearray)):
         return []
-    target_position: int | None = None
+    target_positions: list[int] = []
     for index, message in enumerate(messages):
         if not isinstance(message, Mapping) or message.get("role") != "assistant":
             continue
         if _message_tool_calls(message) == list(target_tool_calls):
-            target_position = index
-    if target_position is None:
+            target_positions.append(index)
+    if len(target_positions) <= prior_occurrence_count:
         return []
+    target_position = target_positions[prior_occurrence_count]
     result: list[str] = []
     for message in messages[target_position + 1 :]:
         if not isinstance(message, Mapping):
@@ -623,6 +662,20 @@ def _tool_result_ids_after_target(
         if isinstance(tool_call_id, str) and tool_call_id:
             result.append(tool_call_id)
     return result
+
+
+def _tool_call_occurrence_count(
+    messages: object,
+    target_tool_calls: Sequence[Mapping[str, Any]],
+) -> int:
+    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes, bytearray)):
+        return 0
+    return sum(
+        isinstance(message, Mapping)
+        and message.get("role") == "assistant"
+        and _message_tool_calls(message) == list(target_tool_calls)
+        for message in messages
+    )
 
 
 def _contains_ordered_sequence(values: Sequence[str], expected: Sequence[str]) -> bool:
@@ -642,14 +695,24 @@ def _validate_tool_result_closure(
     trace_rows: Sequence[Mapping[str, Any]],
     capture_row: Mapping[str, Any],
     response: Mapping[str, Any],
-) -> None:
+    allow_terminal_incomplete: bool = False,
+) -> bool:
     message = response.get("message")
     tool_calls = message.get("tool_calls") if isinstance(message, Mapping) else []
     if not isinstance(tool_calls, list) or not tool_calls:
-        return
+        return True
     if response.get("finish_reason") == "length":
-        return
+        return True
     expected_ids = [str(tool_call.get("id", "")) for tool_call in tool_calls]
+    capture_payload = (
+        capture_row.get("payload")
+        if isinstance(capture_row.get("payload"), Mapping)
+        else {}
+    )
+    prior_occurrence_count = _tool_call_occurrence_count(
+        _provider_request(capture_payload).get("messages"),
+        tool_calls,
+    )
     capture_event_index = capture_row.get("event_index")
     capture_position = next(
         (
@@ -694,6 +757,7 @@ def _validate_tool_result_closure(
             _tool_result_ids_after_target(
                 payload.get("pre_messages"),
                 tool_calls,
+                prior_occurrence_count=prior_occurrence_count,
             ),
             expected_ids,
         ):
@@ -708,15 +772,40 @@ def _validate_tool_result_closure(
                 _tool_result_ids_after_target(
                     _provider_request(next_payload).get("messages"),
                     tool_calls,
+                    prior_occurrence_count=prior_occurrence_count,
                 ),
                 expected_ids,
             )
     if not (trace_proves_execution or next_input_proof or compaction_pre_proof):
+        if allow_terminal_incomplete and next_main_position is None:
+            return False
         raise ValueError("tool-call target lacks matching tool-result closure")
     if next_main_position is not None and not (
         next_input_proof or compacted_next_input_proof
     ):
         raise ValueError("tool results did not enter the next provider request")
+    return True
+
+
+def _trace_proves_nonclean_terminal(
+    trace_rows: Sequence[Mapping[str, Any]],
+    termination: Mapping[str, Any],
+) -> bool:
+    if termination.get("clean_termination") is not False or termination.get("submitted") is not False:
+        return False
+    terminal_rows = [
+        row
+        for row in trace_rows
+        if isinstance(row.get("termination"), str) and row.get("termination")
+    ]
+    if not terminal_rows:
+        return False
+    final_row = terminal_rows[-1]
+    return bool(
+        final_row.get("termination") == termination.get("reason")
+        and isinstance(final_row.get("error"), str)
+        and final_row.get("error")
+    )
 
 
 def _base_provenance(config: TrainingExportConfig, payload: Mapping[str, Any], findings: list[str]) -> dict[str, Any]:
@@ -788,7 +877,14 @@ def _unit_common(config: TrainingExportConfig, row: Mapping[str, Any], unit_type
     }
 
 
-def _build_main_unit(config: TrainingExportConfig, root: Path, row: Mapping[str, Any], trace_ref: Mapping[str, Any]) -> dict[str, Any]:
+def _build_main_unit(
+    config: TrainingExportConfig,
+    root: Path,
+    row: Mapping[str, Any],
+    trace_ref: Mapping[str, Any],
+    *,
+    tool_closure_ok: bool,
+) -> dict[str, Any]:
     payload = row.get("payload") if isinstance(row.get("payload"), Mapping) else {}
     provider_request = _provider_request(payload)
     raw_response = _raw_response(payload)
@@ -802,7 +898,11 @@ def _build_main_unit(config: TrainingExportConfig, root: Path, row: Mapping[str,
     unit = _unit_common(config, row, "main_agent_turn")
     unit.update(
         {
-            "capture_status": "ok" if _main_capture_ok(payload, findings) else "error",
+            "capture_status": (
+                "ok"
+                if _main_capture_ok(payload, findings) and tool_closure_ok
+                else "error"
+            ),
             "request": request,
             "response": response,
             "source": {
@@ -929,6 +1029,50 @@ def _reject_symlink_ancestors(path: Path) -> None:
         current = current.parent
 
 
+def reserve_turn_training_export(
+    config: TrainingExportConfig,
+) -> TrainingExportReservation:
+    if not isinstance(config, TrainingExportConfig):
+        raise TypeError("config must be TrainingExportConfig")
+    target = config.output_dir
+    parent = target.parent
+    _reject_symlink_ancestors(parent)
+    parent.mkdir(parents=True, exist_ok=True)
+    _reject_symlink_ancestors(parent)
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"immutable export already exists: {target}")
+    lock_path = parent / f".{target.name}.publish.lock"
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        lock_fd = os.open(lock_path, flags, 0o600)
+    except FileExistsError as exc:
+        raise FileExistsError(
+            f"immutable export is already reserved: {target}"
+        ) from exc
+    lock_stat = os.fstat(lock_fd)
+    reservation = TrainingExportReservation(
+        target=target,
+        lock_path=lock_path,
+        lock_fd=lock_fd,
+        lock_device=lock_stat.st_dev,
+        lock_inode=lock_stat.st_ino,
+    )
+    if target.exists() or target.is_symlink():
+        reservation.release()
+        raise FileExistsError(f"immutable export already exists: {target}")
+    return reservation
+
+
+def validate_final_patch_source(path: Path) -> Path:
+    return _require_regular_source(Path(path), label="final patch")
+
+
 def _rename_no_replace(source: Path, target: Path) -> None:
     if os.name == "posix":
         libc = ctypes.CDLL(None, use_errno=True)
@@ -960,22 +1104,23 @@ def export_turn_training_bundle(
     *,
     trace_path: Path,
     termination: Mapping[str, Any] | str,
+    _reservation: TrainingExportReservation | None = None,
 ) -> Path:
     if not isinstance(config, TrainingExportConfig):
         raise TypeError("config must be TrainingExportConfig")
-    trace_source = _require_regular_source(Path(trace_path), label="trace")
     target = config.output_dir
     parent = target.parent
-    _reject_symlink_ancestors(parent)
-    parent.mkdir(parents=True, exist_ok=True)
-    _reject_symlink_ancestors(parent)
-    if target.exists() or target.is_symlink():
-        raise FileExistsError(f"immutable export already exists: {target}")
-    lock_path = parent / f".{target.name}.publish.lock"
-    lock_fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    reservation = _reservation or reserve_turn_training_export(config)
+    if (
+        not isinstance(reservation, TrainingExportReservation)
+        or not reservation.active
+        or reservation.target != target
+        or reservation.lock_path != parent / f".{target.name}.publish.lock"
+    ):
+        raise ValueError("training export reservation is invalid or inactive")
     temp: Path | None = None
     try:
-        os.close(lock_fd)
+        trace_source = _require_regular_source(Path(trace_path), label="trace")
         temp = Path(tempfile.mkdtemp(prefix=f".{target.name}.tmp-", dir=parent))
         trace_copy = temp / "artifacts" / "trace" / trace_source.name
         _copy_source(trace_source, trace_copy)
@@ -983,11 +1128,35 @@ def export_turn_training_bundle(
         rows = _read_trace(trace_copy)
         if any(row.get("run_id") != config.run_id for row in rows):
             raise ValueError("trace run_id differs from frozen training identity")
+        normalized_termination = _termination(termination)
+        allow_terminal_incomplete = _trace_proves_nonclean_terminal(
+            rows,
+            normalized_termination,
+        )
         units: list[dict[str, Any]] = []
         for row in rows:
             capture_type = row.get("capture_type")
             if capture_type == "llm_call":
-                units.append(_build_main_unit(config, temp, row, trace_ref))
+                payload = (
+                    row.get("payload")
+                    if isinstance(row.get("payload"), Mapping)
+                    else {}
+                )
+                tool_closure_ok = _validate_tool_result_closure(
+                    trace_rows=rows,
+                    capture_row=row,
+                    response=_normalized_response(_response_source(payload)),
+                    allow_terminal_incomplete=allow_terminal_incomplete,
+                )
+                units.append(
+                    _build_main_unit(
+                        config,
+                        temp,
+                        row,
+                        trace_ref,
+                        tool_closure_ok=tool_closure_ok,
+                    )
+                )
             elif capture_type == "compaction":
                 units.append(_build_compaction_unit(config, temp, row, trace_ref))
         units_path = temp / "turn-training-units.v1.jsonl"
@@ -1007,7 +1176,7 @@ def export_turn_training_bundle(
             "unit_set_sha256": _hash_json(
                 "researchharness.unit-set.v1", [unit["unit_id"] for unit in units]
             ),
-            "termination": _termination(termination),
+            "termination": normalized_termination,
             "final_patch_ref": final_patch_ref,
             "trace_ref": trace_ref,
         }
@@ -1057,14 +1226,7 @@ def export_turn_training_bundle(
             shutil.rmtree(temp, ignore_errors=True)
         raise
     finally:
-        try:
-            os.close(lock_fd)
-        except OSError:
-            pass
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        reservation.release()
 
 
 def _contains_prohibited_key(value: Any) -> bool:
@@ -1222,6 +1384,11 @@ def validate_turn_training_bundle(bundle_path: Path) -> dict[str, Any]:
     trace_rows = _read_trace(trace_path)
     if any(row.get("run_id") != identity["run_id"] for row in trace_rows):
         raise ValueError("trace run_id differs from rollout identity")
+    summary_termination = summary.get("termination")
+    allow_terminal_incomplete = bool(
+        isinstance(summary_termination, Mapping)
+        and _trace_proves_nonclean_terminal(trace_rows, summary_termination)
+    )
     captures = [row for row in trace_rows if row.get("capture_type") in {"llm_call", "compaction"}]
     if len(captures) != len(units):
         raise ValueError("trace capture closure differs from unit count")
@@ -1374,11 +1541,13 @@ def validate_turn_training_bundle(bundle_path: Path) -> dict[str, Any]:
             provider_request=provider_request,
             raw_response=raw_response,
         )
+        tool_closure_ok = True
         if expected_capture == "llm_call":
-            _validate_tool_result_closure(
+            tool_closure_ok = _validate_tool_result_closure(
                 trace_rows=trace_rows,
                 capture_row=row,
                 response=expected_response,
+                allow_terminal_incomplete=allow_terminal_incomplete,
             )
         findings = _oracle_findings(provider_request)
         provenance = unit.get("provenance")
@@ -1424,7 +1593,7 @@ def validate_turn_training_bundle(bundle_path: Path) -> dict[str, Any]:
         expected_status = (
             _compaction_capture_ok(payload, findings)
             if expected_capture == "compaction"
-            else _main_capture_ok(payload, findings)
+            else _main_capture_ok(payload, findings) and tool_closure_ok
         )
         _validate_request_shape(unit["request"], capture_ok=expected_status)
         if unit.get("capture_status") != ("ok" if expected_status else "error"):
@@ -1561,7 +1730,29 @@ def validate_turn_training_bundle(bundle_path: Path) -> dict[str, Any]:
 __all__ = [
     "EXPORT_DIR_NAME",
     "TrainingExportConfig",
+    "TrainingExportReservation",
     "canonical_json_bytes",
     "export_turn_training_bundle",
+    "reserve_turn_training_export",
+    "validate_final_patch_source",
     "validate_turn_training_bundle",
 ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate one immutable ResearchHarness turn-training export bundle."
+    )
+    parser.add_argument("bundle", type=Path, help="Path to turn-training-export-v1")
+    args = parser.parse_args(argv)
+    try:
+        summary = validate_turn_training_bundle(args.bundle)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"invalid training export: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
