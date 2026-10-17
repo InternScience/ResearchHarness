@@ -98,9 +98,23 @@ Required variables:
 | `API_KEY` | API key for your OpenAI-compatible LLM provider. |
 | `API_BASE` | Base URL for the OpenAI-compatible chat-completions endpoint. |
 | `MODEL_NAME` | Main model used by ResearchHarness. |
-| `SERPER_KEY` | Serper key for `WebSearch` and `ScholarSearch`: https://serper.dev/ |
+
+
+Tool-service keys are optional at startup and needed only for the corresponding tools:
+
+| Variable | Meaning |
+| --- | --- |
+| `SERPER_KEY` | Serper key for `ScholarSearch` and Serper `WebSearch`: https://serper.dev/ |
 | `JINA_KEY` | Jina key for `WebFetch`: https://jina.ai/ |
 | `MINERU_TOKEN` | MinerU token for `ReadPDF`: https://mineru.net/ |
+
+`WebSearch` uses free [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+in Fast mode when no Serper key is set. No search account or key is needed.
+A configured `SERPER_KEY` keeps Google search through Serper. Set
+`WEBSEARCH_PROVIDER=parallel`, `serper`, or `disabled` to choose explicitly.
+Failures are returned without switching providers. Parallel requests honor the
+overall `WEBSEARCH_TIMEOUT_SECONDS` (default 30), remaining agent runtime, and
+agent interruption. Anonymous access has service limits.
 
 Optional variables:
 

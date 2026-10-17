@@ -1365,6 +1365,7 @@ class MultiTurnReactAgent(BaseAgent):
                             workspace_root=resolved_workspace_root,
                             runtime_deadline=runtime_deadline,
                             model_name=self.model,
+                            interrupt_event=interrupt_event,
                         )
                     except Exception as exc:
                         result = f"[{tool_name}] Tool execution error: {type(exc).__name__}: {exc}"

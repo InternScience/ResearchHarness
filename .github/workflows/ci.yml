@@ -59,6 +59,9 @@ jobs:
       - name: Run Python import API checks
         run: python tests/test_python_api_tools.py
 
+      - name: Run Parallel Search MCP checks
+        run: python -m unittest discover -s tests -p test_parallel_search.py
+
   main-agent-api:
     name: Main agent API smoke
     runs-on: ubuntu-latest

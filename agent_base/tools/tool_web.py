@@ -59,7 +59,7 @@ def _clean_webpage_text(text: str) -> str:
 
 class WebSearch(ToolBase):
     name = "WebSearch"
-    description = "Perform one Google web search and return the top results. Call WebSearch multiple times for multiple queries."
+    description = "Perform one web search and return relevant sources. Call WebSearch multiple times for multiple queries."
     parameters = {
         "type": "object",
         "properties": {
@@ -160,7 +160,22 @@ class WebSearch(ToolBase):
         if not isinstance(query, str) or not query.strip():
             return "[WebSearch] 'query' must be a non-empty string."
 
-        return self.google_search_with_serp(query.strip())
+        provider = os.getenv("WEBSEARCH_PROVIDER", "").strip().lower()
+        if not provider:
+            provider = "serper" if os.getenv("SERPER_KEY", "").strip() else "parallel"
+        if provider == "disabled":
+            return "[WebSearch] Web search is disabled (WEBSEARCH_PROVIDER=disabled)."
+        if provider == "serper":
+            return self.google_search_with_serp(query.strip())
+        if provider == "parallel":
+            from agent_base.tools.parallel_search import search_parallel
+
+            return search_parallel(
+                query.strip(),
+                runtime_deadline=kwargs.get("runtime_deadline"),
+                interrupt_event=kwargs.get("interrupt_event"),
+            )
+        return "[WebSearch] WEBSEARCH_PROVIDER must be parallel, serper, or disabled."
 
 
 class ScholarSearch(ToolBase):

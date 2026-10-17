@@ -324,15 +324,16 @@ used when they are exposed through a compatible endpoint.
 > **🚨 Required setup before running ResearchHarness**
 >
 > Fill in all required environment variables before starting the agent:
-> `API_KEY`, `API_BASE`, `MODEL_NAME`, `SERPER_KEY`, `JINA_KEY`, and `MINERU_TOKEN`.
+> `API_KEY`, `API_BASE`, and `MODEL_NAME`. Tool-service keys are optional at startup.
 >
 > Service key sources:
 > - LLM provider key and endpoint: your OpenAI-compatible provider.
-> - Serper API key for `WebSearch` and `ScholarSearch`: https://serper.dev/
+> - `WebSearch` uses free [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) in Fast mode when no search provider or Serper key is configured. No search account or API key is needed.
+> - Serper API key for `ScholarSearch` and existing Google `WebSearch`: https://serper.dev/
 > - Jina API key for `WebFetch`: https://jina.ai/
 > - MinerU token plus [`structai`](https://github.com/black-yt/structai) for `ReadPDF`: https://mineru.net/
 >
-> Before using ResearchHarness for real tasks, run the full tool availability check and require every tool to pass:
+> To use every built-in tool, configure the corresponding service keys and run the full tool availability check:
 >
 > ```bash
 > python3 tests/test_tool_availability.py
@@ -346,12 +347,14 @@ Required variables:
 - `API_KEY`
 - `API_BASE`
 - `MODEL_NAME`
-- `SERPER_KEY`
-- `JINA_KEY`
-- `MINERU_TOKEN`
 
 Optional variables:
 
+- `SERPER_KEY` (required for `ScholarSearch` or Serper `WebSearch`)
+- `JINA_KEY` (required for `WebFetch`)
+- `MINERU_TOKEN` (required for `ReadPDF`)
+- `WEBSEARCH_PROVIDER` (`parallel`, `serper`, or `disabled`; automatic when blank)
+- `WEBSEARCH_TIMEOUT_SECONDS` (Parallel MCP total timeout, default `30`)
 - `WORKSPACE_ROOT`
 - `MAX_ROUNDS`
 - `MAX_RUNTIME_SECONDS`
@@ -384,10 +387,18 @@ Minimal example:
 API_KEY="your_api_key"
 API_BASE="https://your-openai-compatible-endpoint/v1"
 MODEL_NAME="gpt-5.5"
-SERPER_KEY="your_serper_key"
-JINA_KEY="your_jina_key"
-MINERU_TOKEN="your_mineru_token"
 ```
+
+`WebSearch` keeps using Serper when `SERPER_KEY` is configured. Set
+`WEBSEARCH_PROVIDER=parallel` to explicitly choose Parallel, `serper` to require
+Google search through Serper, or `disabled` to prevent web searches. An explicit
+provider failure is returned to the agent without switching providers. Parallel
+returns web sources and excerpts; Serper retains its Google-specific behavior.
+Anonymous Parallel access has service limits; search errors are returned to the
+agent. `ScholarSearch`, `WebFetch`, and `ReadPDF` still need their own service keys
+when used. The existing explicit tool list also controls whether `WebSearch` is
+available. Parallel requests honor `WEBSEARCH_TIMEOUT_SECONDS`, the remaining
+agent runtime, and agent interruption.
 
 Sampling defaults and retry policy have code defaults, can be set with
 environment variables, and can be overridden per agent through the Python API.
