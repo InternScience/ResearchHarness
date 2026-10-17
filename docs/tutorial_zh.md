@@ -95,9 +95,17 @@ pip install -e . --no-deps
 | `API_KEY` | OpenAI-compatible LLM 服务的 API key。 |
 | `API_BASE` | OpenAI-compatible chat-completions endpoint 的 base URL。 |
 | `MODEL_NAME` | ResearchHarness 使用的主模型。 |
+
+
+工具服务密钥在启动时是可选的，仅对应工具需要这些密钥：
+
+| 变量 | 含义 |
+| --- | --- |
 | `SERPER_KEY` | `WebSearch` 和 `ScholarSearch` 使用的 Serper key：https://serper.dev/ |
 | `JINA_KEY` | `WebFetch` 使用的 Jina key：https://jina.ai/ |
 | `MINERU_TOKEN` | `ReadPDF` 使用的 MinerU token：https://mineru.net/ |
+
+未配置 Serper key 时，`WebSearch` 默认使用免费的 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)，搜索采用 Fast 模式，无需搜索服务账号或 API key。已有 `SERPER_KEY` 时仍使用 Serper。可通过 `WEBSEARCH_PROVIDER=parallel`、`serper` 或 `disabled` 显式选择或禁用搜索；服务失败时不会切换到其他服务。Parallel 请求遵守 `WEBSEARCH_TIMEOUT_SECONDS`（默认 30 秒）、agent 剩余运行时间以及中断信号。匿名访问有服务用量限制。
 
 可选变量：
 

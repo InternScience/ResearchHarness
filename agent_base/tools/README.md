@@ -130,7 +130,7 @@ run before the edit has completed.
 | `Write` | Local files | `path`, `content`, `overwrite?` | Create a text file or overwrite one when explicitly allowed. | Creates parent directories automatically. Returns an error if the file exists and `overwrite=false`. |
 | `Edit` | Local files | `path`, `patch` | Apply a targeted patch to a local text file. | Expects unified-diff / hunk-style input. Context-based matching, not a full `patch(1)` implementation. |
 | `Bash` | Runtime | `command`, `timeout?`, `workdir?` | Run one-shot shell commands for deterministic local execution, parsing, and validation. | Returns `stdout` and `stderr`. Primary local execution tool for short Python, `rg`, `find`, `git`, and structured local processing. |
-| `WebSearch` | Web | `query` | Perform one general web search. Call it multiple times in one assistant turn for multiple queries. | Returns a text summary headed by `## Web Results` with title, link, snippet, and date/source when available. Uses Serper. |
+| `WebSearch` | Web | `query` | Perform one general web search. Call it multiple times in one assistant turn for multiple queries. | Returns a text summary headed by `## Web Results` with title, link, snippet, and date/source when available. Uses Parallel Search MCP when unconfigured, or Serper when its key is configured. |
 | `ScholarSearch` | Web | `query` | Perform one academic search for papers, year, abstract, and citations. Call it multiple times in one assistant turn for multiple queries. | Returns a text summary headed by `## Scholar Results` with title, PDF link, publication info, year, citation count, and abstract. Uses Serper Scholar. |
 | `WebFetch` | Web | `url`, `start_line?`, `end_line?`, `max_chars?` | Fetch a page and return cleaned, range-bounded webpage text. | Uses Jina Reader only. Returns metadata plus page content so the main agent can inspect and summarize the evidence itself. |
 | `AskUser` | Human interaction | `question`, `context?` | Ask the human user one concise clarification question when essential information cannot be determined from tools or existing instructions. | Writes the question to the interactive terminal and returns the user's answer. If no interactive terminal is available, returns an explicit unavailable message. |
@@ -417,8 +417,13 @@ Arguments:
 
 Behavior:
 
-- Calls Serper's Google Search endpoint.
-- Reads `SERPER_KEY` at runtime.
+- Uses free, anonymous [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) in Fast mode when unconfigured. No search account or API key is needed.
+- Keeps Serper Google Search when `SERPER_KEY` is configured.
+- `WEBSEARCH_PROVIDER=parallel|serper|disabled` explicitly selects or disables search. Environment and saved `.env` choices retain normal configuration precedence.
+- Selected-provider errors are returned without falling back to another service.
+- Parallel MCP discovery and search share an overall `WEBSEARCH_TIMEOUT_SECONDS` budget (default 30 seconds), clipped to the remaining agent runtime. Agent interruption cancels a pending request.
+- Parallel returns sources and excerpts; Serper retains Google-specific results. `ScholarSearch` continues to use Serper.
+- Anonymous Parallel service limits and errors are reported to the agent.
 
 Returns:
 

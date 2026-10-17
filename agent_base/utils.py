@@ -16,9 +16,6 @@ REQUIRED_ENV_VARS = (
     "API_KEY",
     "API_BASE",
     "MODEL_NAME",
-    "SERPER_KEY",
-    "JINA_KEY",
-    "MINERU_TOKEN",
 )
 IMAGE_INPUT_REL_DIR = Path("inputs") / "images"
 MAX_INPUT_IMAGE_BYTES = 25 * 1024 * 1024
